@@ -91,23 +91,36 @@ class RunModeTests(unittest.IsolatedAsyncioTestCase):
             direct_prompt="direct tags",
             nl_prompt="重写这个",
             rewrite=True,
-            translate=False,
         )
 
         ws, translate_calls, submitted_prompts = await self._run_case(req, translated_text="rewritten")
 
         self.assertEqual(len(translate_calls), 1)
-        self.assertEqual(translate_calls[0]["original_prompt"], "builtin tags, direct tags")
+        self.assertEqual(translate_calls[0]["original_prompt"], "direct tags")
         self.assertEqual(submitted_prompts[0]["1"]["inputs"]["text"], "rewritten")
         self.assertTrue(any(m.get("type") == "prompt_id" and m.get("final_prompt") == "rewritten" for m in ws.messages))
 
-    async def test_translate_mode_appends_translated_text_to_base(self):
+    async def test_rewrite_mode_uses_builtin_when_direct_prompt_is_empty(self):
+        req = app.RunRequest(
+            workflow_path="wf.json",
+            direct_prompt="",
+            nl_prompt="重写这个",
+            rewrite=True,
+        )
+
+        ws, translate_calls, submitted_prompts = await self._run_case(req, translated_text="rewritten")
+
+        self.assertEqual(len(translate_calls), 1)
+        self.assertEqual(translate_calls[0]["original_prompt"], "builtin tags")
+        self.assertEqual(submitted_prompts[0]["1"]["inputs"]["text"], "rewritten")
+        self.assertTrue(any(m.get("type") == "prompt_id" and m.get("final_prompt") == "rewritten" for m in ws.messages))
+
+    async def test_nl_prompt_without_rewrite_appends_translated_text_to_base(self):
         req = app.RunRequest(
             workflow_path="wf.json",
             direct_prompt="direct tags",
             nl_prompt="翻译这个",
             rewrite=False,
-            translate=True,
         )
 
         ws, translate_calls, submitted_prompts = await self._run_case(req, translated_text="translated")
@@ -117,36 +130,35 @@ class RunModeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(submitted_prompts[0]["1"]["inputs"]["text"], "builtin tags, direct tags, translated")
         self.assertTrue(any(m.get("type") == "prompt_id" and m.get("final_prompt") == "builtin tags, direct tags, translated" for m in ws.messages))
 
-    async def test_disabling_both_modes_skips_llm_and_uses_direct_prompt_only(self):
+    async def test_empty_nl_prompt_skips_llm_and_uses_base(self):
         req = app.RunRequest(
             workflow_path="wf.json",
             direct_prompt="direct tags",
-            nl_prompt="这段应该被忽略",
+            nl_prompt="",
             rewrite=False,
-            translate=False,
+        )
+
+        ws, translate_calls, submitted_prompts = await self._run_case(req)
+
+        self.assertEqual(translate_calls, [])
+        self.assertEqual(submitted_prompts[0]["1"]["inputs"]["text"], "builtin tags, direct tags")
+        self.assertTrue(any(m.get("type") == "log" and "跳过 LLM" in m.get("message", "") for m in ws.messages))
+
+    async def test_override_excludes_builtin_from_base(self):
+        req = app.RunRequest(
+            workflow_path="wf.json",
+            direct_prompt="direct tags",
+            nl_prompt="",
+            rewrite=False,
+            override=True,
         )
 
         ws, translate_calls, submitted_prompts = await self._run_case(req)
 
         self.assertEqual(translate_calls, [])
         self.assertEqual(submitted_prompts[0]["1"]["inputs"]["text"], "direct tags")
-        self.assertTrue(any(m.get("type") == "log" and "跳过 LLM" in m.get("message", "") for m in ws.messages))
-
-    async def test_disabling_both_modes_requires_direct_prompt(self):
-        req = app.RunRequest(
-            workflow_path="wf.json",
-            direct_prompt="",
-            nl_prompt="这段应该被忽略",
-            rewrite=False,
-            translate=False,
-        )
-
-        ws, translate_calls, submitted_prompts = await self._run_case(req, builtin_text="")
-
-        self.assertEqual(translate_calls, [])
-        self.assertEqual(submitted_prompts, [])
         self.assertTrue(any(
-            m.get("type") == "error" and "直接 Tag" in m.get("message", "")
+            m.get("type") == "log" and "覆写模式" in m.get("message", "")
             for m in ws.messages
         ))
 

@@ -26,9 +26,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 import websockets
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
 COMFYUI_API = f"http://{COMFYUI_HOST}:{COMFYUI_PORT}"
@@ -42,9 +43,80 @@ OUTPUT_DIR = Path(OUTPUT_DIR_STR)
 STATIC_DIR = Path(__file__).parent / "static"
 THUMB_DIR = Path(__file__).parent / "thumbnails"
 THUMB_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+LORA_LINKS_DIR = Path(__file__).parent / "lora_links"
 
 app = FastAPI(title="ComfyUI Web")
+# 文本响应（JSON / HTML / JS / CSS）做轻量级 gzip 压缩；图片字节走另一条路（webp 转码）
+app.add_middleware(GZipMiddleware, minimum_size=512, compresslevel=4)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+# ---------------- WebP 转码（轻量级图片压缩） ----------------
+
+# 进程内缓存：(abs_path, mtime, size) -> webp bytes
+_WEBP_CACHE: "Dict[Tuple[str, float, str], bytes]" = {}
+_WEBP_CACHE_MAX = 64  # LRU 上限，防止内存爆掉
+
+
+def _accepts_webp(request: Request) -> bool:
+    return "image/webp" in (request.headers.get("accept", "") or "").lower()
+
+
+def _encode_webp(src_bytes: bytes, *, quality: int = 80, max_side: Optional[int] = None) -> bytes:
+    """把任意图片字节编码为 webp。max_side 给定时按最长边等比缩放。"""
+    from io import BytesIO
+    from PIL import Image
+    im = Image.open(BytesIO(src_bytes))
+    # webp 不支持 P 模式调色板透明；统一转 RGBA / RGB
+    if im.mode == "P":
+        im = im.convert("RGBA" if "transparency" in im.info else "RGB")
+    elif im.mode not in ("RGB", "RGBA", "L"):
+        im = im.convert("RGBA")
+    if max_side and max_side > 0:
+        w, h = im.size
+        m = max(w, h)
+        if m > max_side:
+            scale = max_side / m
+            im = im.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    buf = BytesIO()
+    im.save(buf, format="WEBP", quality=quality, method=4)
+    return buf.getvalue()
+
+
+def _serve_image_maybe_webp(
+    request: Request,
+    path: Path,
+    *,
+    quality: int = 80,
+    max_side: Optional[int] = None,
+) -> Response:
+    """根据 Accept 头决定原图直传还是 webp 转码。"""
+    media = {"jpg": "image/jpeg", "jpeg": "image/jpeg"}.get(
+        path.suffix.lower().lstrip("."), f"image/{path.suffix.lower().lstrip('.')}"
+    )
+    # 已是 webp / gif / 不接受 webp，直传
+    ext = path.suffix.lower()
+    if ext in (".webp", ".gif") or not _accepts_webp(request):
+        return FileResponse(str(path), media_type=media)
+    try:
+        st = path.stat()
+        key = (str(path), st.st_mtime, f"{quality}@{max_side or 0}")
+        cached = _WEBP_CACHE.get(key)
+        if cached is None:
+            with open(path, "rb") as f:
+                src = f.read()
+            cached = _encode_webp(src, quality=quality, max_side=max_side)
+            if len(_WEBP_CACHE) >= _WEBP_CACHE_MAX:
+                # 朴素 LRU：丢掉最早一个
+                try:
+                    _WEBP_CACHE.pop(next(iter(_WEBP_CACHE)))
+                except StopIteration:
+                    pass
+            _WEBP_CACHE[key] = cached
+        headers = {"Content-Length": str(len(cached)), "Vary": "Accept", "Cache-Control": "public, max-age=300"}
+        return Response(content=cached, media_type="image/webp", headers=headers)
+    except Exception:
+        return FileResponse(str(path), media_type=media)
 
 
 # ---------------- state ----------------
@@ -76,9 +148,10 @@ async def list_workflows() -> List[Dict[str, Any]]:
 
 
 async def get_workflow(path: str) -> Dict[str, Any]:
+    from urllib.parse import quote
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.get(
-            f"{COMFYUI_API}/api/userdata/workflows%2F{path}",
+            f"{COMFYUI_API}/api/userdata/workflows%2F{quote(path, safe='')}",
             headers={"Comfy-User": ""},
         )
         r.raise_for_status()
@@ -140,6 +213,23 @@ def workflow_to_prompt_api(workflow: Dict[str, Any]) -> Tuple[Dict[str, Any], Op
     """与 dev/comfyui.py workflow_to_prompt_api 同步实现。"""
     prompt: Dict[str, Any] = {}
     positive_ref: Optional[Tuple[str, str]] = None
+
+    # 透传：如果传入的就是 API 格式（顶层每个值都带 class_type），直接当 prompt 用
+    if workflow and "nodes" not in workflow and all(
+        isinstance(v, dict) and "class_type" in v for v in workflow.values()
+    ):
+        prompt = {str(k): v for k, v in workflow.items()}
+        # 尝试找 positive 引用：KSampler.inputs.positive → CLIPTextEncode
+        for nid, ndata in prompt.items():
+            if ndata.get("class_type") in ("KSampler", "KSamplerAdvanced", "SamplerCustom", "SamplerCustomAdvanced"):
+                pos = (ndata.get("inputs") or {}).get("positive")
+                if isinstance(pos, list) and pos:
+                    src_id = str(pos[0])
+                    src = prompt.get(src_id, {})
+                    if src.get("class_type") in ("CLIPTextEncode", "CLIPTextEncodeSDXL"):
+                        positive_ref = (src_id, "text")
+                        break
+        return prompt, positive_ref
 
     top_nodes = workflow.get("nodes", [])
     top_links = workflow.get("links", [])
@@ -403,13 +493,12 @@ async def api_list():
 
 
 @app.get("/api/thumbnail")
-async def api_thumbnail(path: str):
+async def api_thumbnail(request: Request, path: str):
     p = find_thumbnail(path)
     if not p:
         raise HTTPException(404, "no thumbnail")
-    ext = p.suffix.lower().lstrip(".")
-    media = {"jpg": "image/jpeg", "jpeg": "image/jpeg"}.get(ext, f"image/{ext}")
-    return FileResponse(str(p), media_type=media)
+    # 缩略图固定限制最长边 256，质量更低
+    return _serve_image_maybe_webp(request, p, quality=72, max_side=256)
 
 
 # ============== ComfyUI output 浏览（只读） ==============
@@ -469,23 +558,27 @@ async def api_output_list(limit: int = 500, offset: int = 0):
 
 
 @app.get("/api/output/file")
-async def api_output_file(path: str):
+async def api_output_file(request: Request, path: str, full: int = 0):
     p = _resolve_output_path(path)
     if not p.is_file():
         raise HTTPException(404, "not found")
     if p.suffix.lower() not in OUTPUT_IMAGE_EXTS:
         raise HTTPException(400, "not an image")
-    ext = p.suffix.lower().lstrip(".")
-    media = {"jpg": "image/jpeg", "jpeg": "image/jpeg"}.get(ext, f"image/{ext}")
-    return FileResponse(str(p), media_type=media)
+    # 默认走 webp 转码（限制最长边 1600 节省带宽）；?full=1 返回原图
+    if full:
+        ext = p.suffix.lower().lstrip(".")
+        media = {"jpg": "image/jpeg", "jpeg": "image/jpeg"}.get(ext, f"image/{ext}")
+        return FileResponse(str(p), media_type=media)
+    return _serve_image_maybe_webp(request, p, quality=82, max_side=1600)
 
 
 def _extract_positive_from_prompt_json(prompt_json: Dict[str, Any]) -> str:
     """从 ComfyUI prompt API JSON 中追正向 CLIPTextEncode 文本。"""
     if not isinstance(prompt_json, dict):
         return ""
+    # 1) 找 KSampler 系节点的 positive 引用 → 源 CLIPTextEncode
     sampler_types = {"KSampler", "KSamplerAdvanced", "SamplerCustom", "SamplerCustomAdvanced"}
-    for _, ndata in prompt_json.items():
+    for nid, ndata in prompt_json.items():
         if not isinstance(ndata, dict):
             continue
         if ndata.get("class_type") in sampler_types:
@@ -493,48 +586,237 @@ def _extract_positive_from_prompt_json(prompt_json: Dict[str, Any]) -> str:
             if isinstance(pos, list) and len(pos) >= 1:
                 src = prompt_json.get(str(pos[0]))
                 if isinstance(src, dict) and src.get("class_type") in ("CLIPTextEncode", "CLIPTextEncodeSDXL"):
-                    text = (src.get("inputs") or {}).get("text", "")
-                    if isinstance(text, str) and text.strip():
-                        return text.strip()
-    for _, ndata in prompt_json.items():
+                    t = (src.get("inputs") or {}).get("text", "")
+                    if isinstance(t, str) and t.strip():
+                        return t.strip()
+    # 2) 兜底：标题包含 positive/[pos]/[prompt] 的 CLIPTextEncode
+    for nid, ndata in prompt_json.items():
         if not isinstance(ndata, dict):
             continue
         if ndata.get("class_type") == "CLIPTextEncode":
             title = ((ndata.get("_meta") or {}).get("title") or "").lower()
             if "positive" in title or "[pos]" in title or "[prompt]" in title:
-                text = (ndata.get("inputs") or {}).get("text", "")
-                if isinstance(text, str) and text.strip():
-                    return text.strip()
+                t = (ndata.get("inputs") or {}).get("text", "")
+                if isinstance(t, str) and t.strip():
+                    return t.strip()
     return ""
+
+
+@app.get("/api/output/creator")
+async def api_output_creator(path: str):
+    """读取该 PNG 的生图者 IP（写入时由 /ws/run 注入的 creator_ip tEXt chunk）。"""
+    p = _resolve_output_path(path)
+    if not p.is_file():
+        raise HTTPException(404, "not found")
+    if p.suffix.lower() != ".png":
+        return {"creator_ip": ""}
+    return {"creator_ip": _read_png_text_chunk(p, "creator_ip")}
 
 
 @app.get("/api/output/meta")
 async def api_output_meta(path: str):
-    """读取图片元数据，返回可识别的正向 prompt。"""
+    """读取图片元数据（目前主要支持 PNG），返回正向 prompt（若可识别）。"""
     p = _resolve_output_path(path)
     if not p.is_file():
         raise HTTPException(404, "not found")
     if p.suffix.lower() != ".png":
         return {"path": path, "positive": "", "supported": False}
     try:
-        from PIL import Image
-        with Image.open(p) as im:
-            info = dict(im.info or {})
+        from PIL import Image  # 延迟导入
+        im = Image.open(p)
+        info = im.info or {}
     except Exception as e:
-        return {"path": path, "positive": "", "error": str(e), "supported": True}
+        return {"path": path, "positive": "", "error": str(e)}
 
     positive = ""
     raw_prompt = info.get("prompt")
     if isinstance(raw_prompt, str):
         try:
-            positive = _extract_positive_from_prompt_json(json.loads(raw_prompt))
+            pj = json.loads(raw_prompt)
+            positive = _extract_positive_from_prompt_json(pj)
         except Exception:
             pass
+    # A1111 webui 风格兜底
     if not positive:
         params = info.get("parameters")
         if isinstance(params, str) and params.strip():
-            positive = params.split("Negative prompt:", 1)[0].split("Steps:", 1)[0].strip()
+            # A1111: 第一段直到 "Negative prompt:" 之前
+            head = params.split("Negative prompt:", 1)[0].strip()
+            head = head.split("Steps:", 1)[0].strip()
+            positive = head
     return {"path": path, "positive": positive, "supported": True}
+
+
+def _read_png_text_chunk(path: Path, key: str) -> str:
+    """直接扫描 PNG 的 tEXt / zTXt / iTXt chunk，返回指定 key 的文本。
+    不受 Pillow MAX_TEXT_CHUNK 限制；适合读 ComfyUI 写入的大 workflow。
+    """
+    import struct
+    import zlib
+    target = key.encode("latin-1")
+    try:
+        with open(path, "rb") as f:
+            sig = f.read(8)
+            if sig != b"\x89PNG\r\n\x1a\n":
+                return ""
+            while True:
+                head = f.read(8)
+                if len(head) < 8:
+                    return ""
+                length, ctype = struct.unpack(">I4s", head)
+                data = f.read(length)
+                f.read(4)  # crc
+                if ctype == b"IEND":
+                    return ""
+                if ctype == b"tEXt":
+                    k, _, v = data.partition(b"\x00")
+                    if k == target:
+                        return v.decode("utf-8", errors="replace")
+                elif ctype == b"zTXt":
+                    k, _, rest = data.partition(b"\x00")
+                    if k == target and rest:
+                        # rest[0] = compression method (0=deflate)
+                        try:
+                            return zlib.decompress(rest[1:]).decode("utf-8", errors="replace")
+                        except Exception:
+                            return ""
+                elif ctype == b"iTXt":
+                    k, _, rest = data.partition(b"\x00")
+                    if k != target or len(rest) < 2:
+                        continue
+                    comp_flag = rest[0]
+                    # comp_method = rest[1]; 跳过 language tag 和 translated keyword
+                    rest2 = rest[2:]
+                    _, _, rest3 = rest2.partition(b"\x00")  # language
+                    _, _, text_bytes = rest3.partition(b"\x00")  # translated kw
+                    if comp_flag:
+                        try:
+                            text_bytes = zlib.decompress(text_bytes)
+                        except Exception:
+                            return ""
+                    return text_bytes.decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+    return ""
+
+
+def _png_set_text(path: Path, key: str, value: str) -> bool:
+    """在 PNG 文件中追加/替换一个 tEXt chunk。原子写。
+    保留所有其它 chunk（包括 ComfyUI 写入的 prompt / workflow）。
+    """
+    import struct, zlib, os
+    if not value:
+        return False
+    try:
+        with open(path, "rb") as f:
+            raw = f.read()
+        if raw[:8] != b"\x89PNG\r\n\x1a\n":
+            return False
+        out = bytearray(raw[:8])
+        i = 8
+        target_key = key.encode("latin-1")
+        replaced = False
+        while i + 8 <= len(raw):
+            length = struct.unpack(">I", raw[i:i + 4])[0]
+            ctype = raw[i + 4:i + 8]
+            chunk_end = i + 8 + length + 4
+            data = raw[i + 8:i + 8 + length]
+            if ctype == b"tEXt":
+                k, _, _ = data.partition(b"\x00")
+                if k == target_key:
+                    # 跳过旧的，由后面 IEND 前的新 tEXt 替代
+                    i = chunk_end
+                    replaced = True
+                    continue
+            if ctype == b"IEND":
+                # 在 IEND 前插入我们的 tEXt
+                payload = target_key + b"\x00" + value.encode("utf-8", errors="replace")
+                crc = zlib.crc32(b"tEXt" + payload) & 0xffffffff
+                out += struct.pack(">I", len(payload)) + b"tEXt" + payload + struct.pack(">I", crc)
+                out += raw[i:chunk_end]
+                i = chunk_end
+                # 复制剩余（一般无）
+                if i < len(raw):
+                    out += raw[i:]
+                # 原子替换
+                tmp = path.with_suffix(path.suffix + ".tmp")
+                with open(tmp, "wb") as f:
+                    f.write(out)
+                os.replace(tmp, path)
+                return True
+            out += raw[i:chunk_end]
+            i = chunk_end
+        return False
+    except Exception:
+        return False
+
+
+@app.post("/api/output/fork")
+async def api_output_fork(payload: Dict[str, Any]):
+    """从输出 PNG 提取 workflow / prompt 元信息，原样返回给前端用于"临时还原"。
+    不持久化、不写盘。前端拿到后存在内存里，下次提交时通过 /ws/run 的 inline_workflow 字段送回。
+
+    入参：{"path": "<相对 OUTPUT_DIR 的图片路径>"}
+    出参：{"workflow": <dict>, "summary": {...}, "default_width": int|None, "default_height": int|None,
+          "builtin_prompt": str, "loras": [str], "format": "api"|"editor"}
+    """
+    rel = (payload or {}).get("path", "")
+    if not rel:
+        raise HTTPException(400, "path required")
+    p = _resolve_output_path(rel)
+    if not p.is_file():
+        raise HTTPException(404, "not found")
+    if p.suffix.lower() != ".png":
+        raise HTTPException(400, "仅支持从 PNG 中提取工作流")
+    try:
+        from PIL import Image
+        from PIL import PngImagePlugin
+        PngImagePlugin.MAX_TEXT_CHUNK = 100 * 1024 * 1024
+        PngImagePlugin.MAX_TEXT_MEMORY = 100 * 1024 * 1024
+        im = Image.open(p)
+        info = im.info or {}
+    except Exception as e:
+        raise HTTPException(500, f"读取图片失败: {e}")
+
+    raw_wf = info.get("workflow")
+    if not isinstance(raw_wf, str) or not raw_wf.strip():
+        raw_wf = _read_png_text_chunk(p, "workflow")
+    fmt = "editor"
+    if not isinstance(raw_wf, str) or not raw_wf.strip():
+        raw_wf = info.get("prompt") if isinstance(info.get("prompt"), str) else None
+        fmt = "api"
+    if not isinstance(raw_wf, str) or not raw_wf.strip():
+        raw_wf = _read_png_text_chunk(p, "prompt")
+        fmt = "api"
+    if not isinstance(raw_wf, str) or not raw_wf.strip():
+        keys = list(info.keys())
+        raise HTTPException(400, f"图片中没有 workflow / prompt 元信息（可读字段: {keys}）")
+    try:
+        wf_json = json.loads(raw_wf)
+    except Exception as e:
+        raise HTTPException(400, f"workflow 元信息解析失败: {e}")
+
+    pd, positive_ref = workflow_to_prompt_api(wf_json)
+    res = detect_default_resolution(pd)
+    builtin_prompt = ""
+    if positive_ref:
+        nid, inp = positive_ref
+        v = pd.get(nid, {}).get("inputs", {}).get(inp, "")
+        if isinstance(v, str):
+            builtin_prompt = v.strip()
+    summary = summarize_workflow(wf_json) if "nodes" in wf_json and isinstance(wf_json.get("nodes"), list) else {
+        "node_count": len(pd), "link_count": 0, "group_count": 0, "types": {},
+    }
+    return {
+        "workflow": wf_json,
+        "format": fmt,
+        "summary": summary,
+        "default_width": res[0] if res else None,
+        "default_height": res[1] if res else None,
+        "builtin_prompt": builtin_prompt,
+        "loras": extract_loras(pd),
+        "source_image": rel,
+    }
 
 
 @app.post("/api/workflows/select")
@@ -591,13 +873,6 @@ def apply_resolution(prompt_dict: Dict[str, Any], width: int, height: int) -> in
     return n
 
 
-def build_prompt_base(builtin: str, direct_prompt: str, drop_builtin: bool, sep: str = ", ") -> Tuple[List[str], str]:
-    builtin_part = "" if drop_builtin else builtin.strip()
-    direct_part = direct_prompt.strip()
-    base_parts = [part for part in (builtin_part, direct_part) if part]
-    return base_parts, sep.join(base_parts)
-
-
 @app.get("/api/workflows/current")
 async def api_current(path: Optional[str] = None):
     """返回指定工作流的摘要 + 默认分辨率。前端传 path（来自浏览器 localStorage）。
@@ -625,16 +900,79 @@ async def api_current(path: Optional[str] = None):
         "default_width": res[0] if res else None,
         "default_height": res[1] if res else None,
         "builtin_prompt": builtin_prompt,
+        "loras": extract_loras(pd),
+        "lora_link": find_lora_link(path),
     }
 
 
+def find_lora_link(wf_path: str) -> Optional[str]:
+    """在 web/lora_links/ 下查找与工作流同名的 .txt（仅一行链接）。
+    匹配规则同缩略图：先按完整 path（保留子目录），再退回 basename。
+    """
+    if not wf_path:
+        return None
+    stem = wf_path[:-5] if wf_path.lower().endswith(".json") else wf_path
+    base = Path(stem)
+    candidates = [
+        LORA_LINKS_DIR / (str(base) + ".txt"),
+        LORA_LINKS_DIR / (base.name + ".txt"),
+    ]
+    root = LORA_LINKS_DIR.resolve()
+    for c in candidates:
+        try:
+            cr = c.resolve()
+            if cr.is_file() and str(cr).startswith(str(root)):
+                line = cr.read_text(encoding="utf-8").strip().splitlines()
+                url = line[0].strip() if line else ""
+                if url:
+                    return url
+        except Exception:
+            continue
+    return None
+
+
+def extract_loras(prompt_dict: Dict[str, Any]) -> List[str]:
+    """从 prompt API 格式中提取所有 Lora 文件名（去重，保持顺序）。
+    覆盖 LoraLoader / LoraLoaderModelOnly / rgthree Power Lora Loader 等。
+    """
+    seen: Dict[str, None] = {}
+    for nid, ndata in prompt_dict.items():
+        if not isinstance(ndata, dict):
+            continue
+        cls = (ndata.get("class_type") or "")
+        if "lora" not in cls.lower():
+            continue
+        inputs = ndata.get("inputs") or {}
+        for k, v in inputs.items():
+            if not isinstance(v, str):
+                # rgthree Power Lora Loader: inputs 形如 {"lora_1": {"on": true, "lora": "xxx.safetensors", ...}}
+                if isinstance(v, dict):
+                    name = v.get("lora")
+                    on = v.get("on", True)
+                    if isinstance(name, str) and name and name.lower() != "none" and on:
+                        seen.setdefault(name, None)
+                continue
+            kl = k.lower()
+            if "lora" in kl and "name" in kl or kl == "lora_name" or kl == "lora":
+                if v and v.lower() != "none":
+                    seen.setdefault(v, None)
+    return list(seen.keys())
+
+
 @app.get("/api/image")
-async def api_image(filename: str, subfolder: str = "", type: str = "output"):
+async def api_image(request: Request, filename: str, subfolder: str = "", type: str = "output"):
     try:
         content, ct = await download_image(filename, subfolder, type)
-        return Response(content=content, media_type=ct)
     except Exception as e:
         raise HTTPException(500, str(e))
+    # 浏览器接受 webp 时即时转码（节省 60-80% 带宽）
+    if _accepts_webp(request) and ct.startswith("image/") and ct not in ("image/webp", "image/gif"):
+        try:
+            webp = _encode_webp(content, quality=82, max_side=1600)
+            return Response(content=webp, media_type="image/webp", headers={"Vary": "Accept"})
+        except Exception:
+            pass
+    return Response(content=content, media_type=ct)
 
 
 @app.post("/api/translate")
@@ -671,11 +1009,11 @@ async def api_interrupt():
 
 class RunRequest(BaseModel):
     workflow_path: str = ""
+    inline_workflow: Optional[Dict[str, Any]] = None  # 临时 fork：直接传整份工作流（不持久化）
     direct_prompt: str = ""
     nl_prompt: str = ""
     rewrite: bool = False
-    translate: bool = False
-    drop_builtin: bool = False
+    override: bool = False
     width: Optional[int] = None
     height: Optional[int] = None
     batch: int = 1
@@ -784,10 +1122,17 @@ async def ws_run(ws: WebSocket):
         except Exception:
             return
         global _current_run_task, _active_cancel_event
+        h = ws.headers
+        client_ip = (
+            h.get("cf-connecting-ip")
+            or (h.get("x-forwarded-for", "").split(",")[0].strip() if h.get("x-forwarded-for") else "")
+            or (ws.client.host if ws.client else "")
+            or "unknown"
+        )
         try:
             _current_run_task = asyncio.current_task()
             _active_cancel_event = asyncio.Event()
-            await _run_task(ws, RunRequest(**init))
+            await _run_task(ws, RunRequest(**init), client_ip=client_ip)
         except asyncio.CancelledError:
             try:
                 await emit(ws, {"type": "error", "message": "已取消"})
@@ -806,7 +1151,7 @@ async def ws_run(ws: WebSocket):
             await _push_status(reset=True)
 
 
-async def _run_task(ws: WebSocket, req: RunRequest):
+async def _run_task(ws: WebSocket, req: RunRequest, *, client_ip: str = "unknown"):
     import time as _time
 
     async def _stop_if_cancelled() -> bool:
@@ -816,19 +1161,25 @@ async def _run_task(ws: WebSocket, req: RunRequest):
         return False
 
     path = req.workflow_path
-    if not path:
-        await emit(ws, {"type": "error", "message": "未指定工作流（前端未传 workflow_path）"})
+    inline = req.inline_workflow
+    if not path and not inline:
+        await emit(ws, {"type": "error", "message": "未指定工作流（前端未传 workflow_path 或 inline_workflow）"})
         return
 
+    display_path = path or "(临时 fork)"
     await _push_status({
         "busy": True,
         "stage": "loading",
-        "workflow": path,
+        "workflow": display_path,
         "started_at": _time.time(),
     })
 
-    await emit(ws, {"type": "log", "message": f"[1/4] 加载工作流 {path}"})
-    data = await get_workflow(path)
+    if inline:
+        await emit(ws, {"type": "log", "message": "[1/4] 使用临时 fork 工作流（内存内，不持久化）"})
+        data = inline
+    else:
+        await emit(ws, {"type": "log", "message": f"[1/4] 加载工作流 {path}"})
+        data = await get_workflow(path)
     prompt_dict, positive_ref = workflow_to_prompt_api(data)
     if not positive_ref:
         await emit(ws, {"type": "error", "message": "未找到正向 CLIPTextEncode 节点"})
@@ -840,10 +1191,13 @@ async def _run_task(ws: WebSocket, req: RunRequest):
     builtin = builtin.strip()
 
     sep = ", "
-    base_parts, base = build_prompt_base(builtin, req.direct_prompt, req.drop_builtin, sep=sep)
 
-    use_llm = bool(req.nl_prompt and (req.rewrite or req.translate))
-    if use_llm:
+    # 覆写模式：忽略工作流内置 prompt
+    effective_builtin = "" if req.override else builtin
+    if req.override:
+        await emit(ws, {"type": "log", "message": "覆写模式：忽略工作流内置 prompt"})
+
+    if req.nl_prompt:
         await emit(ws, {"type": "log", "message": f"[2/4] LLM {'改写' if req.rewrite else '翻译'}中..."})
         await emit(ws, {"type": "llm_start"})
         await _push_status({"stage": "llm"})
@@ -851,6 +1205,7 @@ async def _run_task(ws: WebSocket, req: RunRequest):
         async def _on_chunk(piece: str):
             await emit(ws, {"type": "llm_chunk", "delta": piece})
 
+        base = req.direct_prompt or effective_builtin
         if req.rewrite and base:
             translated = await translate_prompt(
                 req.nl_prompt,
@@ -869,16 +1224,12 @@ async def _run_task(ws: WebSocket, req: RunRequest):
             )
             if await _stop_if_cancelled():
                 return
-            sd_prompt = sep.join(base_parts + [translated]) if translated else base
+            parts = [p for p in (effective_builtin, req.direct_prompt, translated) if p]
+            sd_prompt = sep.join(parts)
         await emit(ws, {"type": "llm_done", "text": translated})
-    elif not req.rewrite and not req.translate:
-        sd_prompt = req.direct_prompt.strip()
-        await emit(ws, {"type": "log", "message": "[2/4] 跳过 LLM，使用直接 Tag"})
-        if not sd_prompt:
-            await emit(ws, {"type": "error", "message": "未启用改写/翻译时，请填写直接 Tag"})
-            return
     else:
-        sd_prompt = base
+        parts = [p for p in (effective_builtin, req.direct_prompt) if p]
+        sd_prompt = sep.join(parts)
         await emit(ws, {"type": "log", "message": "[2/4] 跳过 LLM"})
 
     if not sd_prompt.strip():
@@ -938,6 +1289,16 @@ async def _run_task(ws: WebSocket, req: RunRequest):
         if not images:
             await emit(ws, {"type": "error", "message": f"第 {round_idx + 1} 轮无图片输出"})
             return
+
+        for img in images:
+            if img.get("type") == "output" and img.get("filename", "").lower().endswith(".png"):
+                try:
+                    rel = (img.get("subfolder") or "") + ("/" if img.get("subfolder") else "") + img["filename"]
+                    fpath = _resolve_output_path(rel.replace("\\", "/"))
+                    if fpath.is_file():
+                        _png_set_text(fpath, "creator_ip", client_ip)
+                except Exception:
+                    pass
 
         for img in images:
             url = f"/api/image?filename={img['filename']}&subfolder={img['subfolder']}&type={img['type']}"

@@ -6,20 +6,96 @@
 <title>ComfyUI Web</title>
 <link rel="icon" type="image/avif" href="/static/favicon.avif" />
 <script src="https://cdn.tailwindcss.com"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/glightbox/dist/css/glightbox.min.css" />
-<script src="https://cdn.jsdelivr.net/npm/glightbox/dist/js/glightbox.min.js"></script>
+<style>
+  /* 全局：任何内容都不准把布局撑出视口 */
+  html, body { max-width: 100vw; overflow-x: hidden; }
+  *, *::before, *::after {
+    min-width: 0;       /* 取消 flex/grid 子项的默认 min-width:auto，长内容才能换行 */
+    min-height: 0;
+  }
+  /* 长 URL/无空格文本兜底换行 */
+  a, code, pre, span, div, p, li, td { overflow-wrap: anywhere; word-break: break-word; }
+  pre, code { white-space: pre-wrap; }
+  img, video, canvas, iframe { max-width: 100%; height: auto; }
+  /* 自建灯箱样式 */
+  #lb-root { position: fixed; inset: 0; z-index: 60; background: #000; display: none; flex-direction: column; }
+  #lb-root.open { display: flex; }
+  #lb-img-wrap { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 8px; }
+  #lb-img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: auto; -webkit-user-select: auto; -webkit-touch-callout: default; }
+  #lb-bar { color: #fff; padding: 8px 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: rgba(0,0,0,.5); }
+  .lb-nav { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,.4); color: #fff; border: 0; width: 44px; height: 64px; font-size: 28px; cursor: pointer; }
+  .lb-nav:hover { background: rgba(0,0,0,.7); }
+  #lb-prev { left: 8px; }
+  #lb-next { right: 8px; }
+  #lb-close { position: absolute; top: 8px; right: 12px; background: transparent; color: #fff; border: 0; font-size: 28px; cursor: pointer; }
+  #lb-title { color: #ddd; font-size: 12px; margin-right: auto; word-break: break-all; }
+</style>
 </head>
 <body class="bg-gray-100 min-h-screen">
+
+
+<!-- 自建灯箱 -->
+<div id="lb-root" role="dialog" aria-modal="true">
+  <button id="lb-close" title="关闭 (Esc)">×</button>
+  <button id="lb-prev" class="lb-nav" title="上一张 (←)">‹</button>
+  <button id="lb-next" class="lb-nav" title="下一张 (→)">›</button>
+  <div id="lb-img-wrap"><img id="lb-img" alt="" /></div>
+  <div id="lb-bar">
+    <span id="lb-title"></span>
+    <span id="lb-creator" class="text-xs text-amber-300"></span>
+    <a id="lb-download" href="#" target="_blank" rel="noopener" download
+       class="text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">⬇ 下载原图</a>
+    <button id="lb-fork" class="text-xs px-3 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700">🍴 Fork 工作流</button>
+    <span id="lb-status" class="text-xs text-white/80"></span>
+  </div>
+</div>
+
+
+<!-- 全局遮罩：年龄确认前彻底盖住后面所有内容（防止偷瞄生成图） -->
+<div id="age-blocker" class="fixed inset-0 z-40 bg-black hidden"></div>
+
+<!-- 18+ 年龄确认 -->
+<div id="age-gate" class="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4 hidden">
+  <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+    <h2 class="text-xl font-bold mb-3 text-red-600">⚠️ 请确认您已年满 18 岁</h2>
+    <p class="text-sm text-gray-700 leading-relaxed mb-4">
+      本站为 AI 绘图工具，所有图片内容均由用户在本机实时生成。
+      由于审查机制可能存在漏洞，生成结果中<strong>可能出现色情、暴力、或其它不符合当地法律法规的内容</strong>。
+      <br><br>
+      继续使用即表示您：<br>
+      ① 已年满 18 周岁；<br>
+      ② 自愿浏览并自行承担相应法律及精神风险；<br>
+      ③ 不会将本站用于违法用途，亦不会向未成年人传播本站生成的内容。
+      <br><br>
+      若您不同意以上任何一条，请立即退出本站。
+    </p>
+    <div class="flex gap-2 justify-end">
+      <button id="age-leave" class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 text-sm">退出</button>
+      <button id="age-accept" class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 text-sm">我已满 18 岁，继续</button>
+    </div>
+  </div>
+</div>
+
 <div class="max-w-6xl mx-auto p-4">
-  <div class="flex items-center justify-between mb-4">
+  <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
     <h1 class="text-2xl font-bold">🎨 ComfyUI 网页控制台</h1>
-    <a href="https://github.com/afoim/natureDrawImage" target="_blank" rel="noopener"
-       class="text-sm text-gray-600 hover:text-blue-600 flex items-center gap-1">
-      <svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor" aria-hidden="true">
-        <path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
-      </svg>
-      <span>GitHub</span>
-    </a>
+    <div class="flex items-center gap-3 flex-wrap">
+      <a href="https://space.bilibili.com/325903362" target="_blank" rel="noopener"
+         class="text-sm flex items-center gap-1 px-2 py-1 rounded bg-pink-100 text-pink-700 hover:bg-pink-200 border border-pink-300"
+         title="作者 B 站主页 · 求关注">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+          <path d="M17.813 4.653h.854c1.51.054 2.769.578 3.773 1.574 1.004.995 1.524 2.249 1.56 3.76v7.36c-.036 1.51-.556 2.769-1.56 3.773s-2.262 1.524-3.773 1.56H5.333c-1.51-.036-2.769-.556-3.773-1.56S.036 18.858 0 17.347v-7.36c.036-1.511.556-2.765 1.56-3.76 1.004-.996 2.262-1.52 3.773-1.574h.853L4.6 3.4c-.18-.18-.27-.405-.27-.674 0-.27.09-.495.27-.675s.405-.27.674-.27c.27 0 .495.09.675.27L8.728 4.653h6.55L18.6 1.353c.18-.18.405-.27.674-.27.27 0 .495.09.675.27s.27.405.27.674c0 .27-.09.495-.27.675zm.974 1.866H5.333c-.99 0-1.83.345-2.518 1.034-.69.69-1.05 1.53-1.084 2.52v7.36c.034 1.001.395 1.84 1.084 2.518.689.679 1.529 1.018 2.518 1.018h13.454c.99 0 1.83-.339 2.519-1.018.689-.679 1.05-1.517 1.084-2.518v-7.36c-.034-.99-.395-1.83-1.084-2.52-.689-.689-1.529-1.034-2.519-1.034zM8 11.16c.4 0 .742.142 1.025.426.282.282.424.624.424 1.025v1.58c0 .402-.142.745-.424 1.026-.283.282-.624.422-1.025.422-.4 0-.742-.14-1.025-.422-.282-.281-.424-.624-.424-1.026v-1.58c0-.401.142-.743.424-1.025.283-.284.624-.426 1.025-.426zm8 0c.4 0 .742.142 1.025.426.282.282.424.624.424 1.025v1.58c0 .402-.142.745-.424 1.026-.283.282-.624.422-1.025.422-.4 0-.742-.14-1.025-.422-.282-.281-.424-.624-.424-1.026v-1.58c0-.401.142-.743.424-1.025.283-.284.624-.426 1.025-.426z"/>
+        </svg>
+        <span>关注作者 @二叉树树</span>
+      </a>
+      <a href="https://github.com/afoim/natureDrawImage" target="_blank" rel="noopener"
+         class="text-sm text-gray-600 hover:text-blue-600 flex items-center gap-1">
+        <svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor" aria-hidden="true">
+          <path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+        <span>GitHub</span>
+      </a>
+    </div>
   </div>
 
   <!-- 全局状态横幅 -->
@@ -55,12 +131,20 @@
   <div class="bg-white rounded shadow p-4 mb-4">
     <h2 class="text-lg font-semibold mb-3">🎨 生成图片</h2>
 
+    <div class="mb-3 text-xs bg-pink-50 border border-pink-200 text-pink-900 rounded p-2">
+      💕 <strong>第一次用 AI 生图？</strong>
+      看这篇手把手教程：
+      <a href="https://2x.nz/posts/ai-wife"
+         target="_blank" rel="noopener"
+         class="font-medium underline hover:text-pink-700">从零开始造老婆 →</a>
+    </div>
+
     <div class="mb-3 text-xs bg-purple-50 border border-purple-200 text-purple-900 rounded p-2">
       🎨 想换 <strong>Q 版 / 厚涂 / 像素 / 写实</strong> 等画风？试试在直接 Tag 里加上画师词条，参考
       <a href="https://www.downloadmost.com/NoobAI-XL/danbooru-artist/"
          target="_blank" rel="noopener"
          class="underline hover:text-purple-700">danbooru-artist 画师库</a>
-      （格式如 <code class="bg-white/70 px-1 rounded">artist:xxx</code> 或直接逗号加画师名，权重可加括号）。
+      （格式：<code class="bg-white/70 px-1 rounded">by xxx</code>，可加括号调权重，如 <code class="bg-white/70 px-1 rounded">(by xxx:1.2)</code>）。
     </div>
 
     <div class="mb-3 text-xs bg-blue-50 border border-blue-200 text-blue-900 rounded p-2">
@@ -79,74 +163,18 @@
     <textarea id="nl" rows="3" placeholder="可选：中文/英文自然语言，会经过 LLM 处理"
       class="w-full border rounded px-2 py-1 mb-3 text-sm"></textarea>
 
-    <div class="flex gap-4 mb-1 text-sm flex-wrap">
-      <label class="flex items-center gap-1"><input type="checkbox" id="rewrite" /> 改写模式 (-r)</label>
-      <label class="flex items-center gap-1"><input type="checkbox" id="translate" /> 翻译模式</label>
-      <label class="flex items-center gap-1"><input type="checkbox" id="drop_builtin" /> 覆写模式</label>
+    <div class="flex gap-4 mb-1 text-sm">
+      <label class="flex items-center gap-1"><input type="checkbox" id="rewrite" checked /> 改写模式 (-r)</label>
+      <label class="flex items-center gap-1"><input type="checkbox" id="override" /> 覆写模式</label>
     </div>
-    <details class="text-xs text-gray-600 mb-3 bg-gray-50 border border-gray-200 rounded p-2">
-      <summary class="cursor-pointer select-none font-medium text-gray-700">
-        📖 N / R / T / D / B 如何组合成最终 prompt（点开看清单）
-      </summary>
-      <div class="mt-2 space-y-3">
-        <div class="bg-white border rounded p-2">
-          <div class="font-semibold text-gray-700 mb-1">五个变量</div>
-          <ul class="space-y-1">
-            <li><b class="text-blue-700">N</b> = 自然语言框（-t）。只有 R 或 T 开启时才会参与 LLM。</li>
-            <li><b class="text-blue-700">R</b> = 改写模式（-r）。仅在 N 非空时生效。</li>
-            <li><b class="text-blue-700">T</b> = 翻译模式。仅在 N 非空时生效。</li>
-            <li><b class="text-blue-700">D</b> = 直接 Tag 框（-d），手写英文 tag。</li>
-            <li><b class="text-blue-700">B</b> = 工作流内置 prompt，上面那个只读框。</li>
-          </ul>
-          <div class="mt-2 text-gray-500">
-            统一记号：<code>底本 = B , D</code>（按顺序拼接，空的跳过）<br>
-            勾选「覆写模式」后：<code>底本 = D</code>，B 不参与改写或翻译。
-          </div>
-        </div>
-
-        <div class="bg-white border rounded p-2">
-          <div class="font-semibold text-gray-700 mb-1">四种情况</div>
-          <table class="w-full border-collapse text-[11px]">
-            <thead class="bg-gray-100">
-              <tr>
-                <th class="border px-1 py-1 text-left">条件</th>
-                <th class="border px-1 py-1 text-left">LLM 做什么</th>
-                <th class="border px-1 py-1 text-left">最终 prompt</th>
-              </tr>
-            </thead>
-            <tbody class="align-top">
-              <tr>
-                <td class="border px-1 py-1">R 关 + T 关</td>
-                <td class="border px-1 py-1 text-gray-500">不调用</td>
-                <td class="border px-1 py-1"><code>D</code></td>
-              </tr>
-              <tr>
-                <td class="border px-1 py-1">N 空 + R/T 任一开</td>
-                <td class="border px-1 py-1 text-gray-500">不调用</td>
-                <td class="border px-1 py-1"><code>底本</code></td>
-              </tr>
-              <tr>
-                <td class="border px-1 py-1">N 有 + T 开</td>
-                <td class="border px-1 py-1">把 N 翻成英文 tag</td>
-                <td class="border px-1 py-1"><code>底本 , 翻译(N)</code></td>
-              </tr>
-              <tr class="bg-blue-50">
-                <td class="border px-1 py-1">N 有 + R 开</td>
-                <td class="border px-1 py-1">把<b>底本</b>当原始 prompt，按 N 整体重写<br><span class="text-gray-500">底本为空时降级为翻译</span></td>
-                <td class="border px-1 py-1"><code>改写输出</code></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="bg-white border rounded p-2 text-gray-600">
-          改写模式和翻译模式互斥。两个都不勾选时，即使 N 里有内容，也会直接跳过 LLM，仅使用直接 Tag。覆写模式只控制 B 是否进入底本，不改变 R/T 的互斥和直出规则。
-        </div>
-      </div>
-    </details>
+    <p class="text-xs text-gray-500 mb-3">
+      改写模式：让 LLM 基于「直接 Tag」（或工作流内置 prompt）作为底本，结合「自然语言描述」整体重写一段新的 prompt，会智能修改、删除、补充原有标签。<br>
+      未勾选时为普通翻译/追加：把自然语言翻译成 tag 后，直接拼接到底本之后，原内容保持不变。<br>
+      <span class="text-orange-600">覆写模式：完全忽略工作流内置 prompt，最终只用你的输入（直接 Tag + LLM 输出）。</span>
+    </p>
 
     <div id="builtin-box" class="hidden mb-3 border border-gray-200 rounded p-2 bg-gray-50">
-      <div class="flex items-center justify-between gap-2 mb-1">
+      <div class="flex items-center justify-between mb-1">
         <span class="text-xs text-gray-600">📦 当前工作流内置 prompt：</span>
         <button id="btn-copy-builtin" type="button"
           class="text-xs px-2 py-0.5 bg-gray-200 rounded hover:bg-gray-300">复制到「直接 Tag」</button>
@@ -176,9 +204,13 @@
       </div>
     </div>
     <div class="flex flex-wrap gap-2 mb-3 text-xs" id="res-presets">
+      <button type="button" data-w="1024" data-h="1344"
+        class="px-2 py-1 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100">
+        1024×1344 <span class="text-gray-500">WAI 推荐</span>
+      </button>
       <button type="button" data-w="832" data-h="1216"
         class="px-2 py-1 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100">
-        832×1216 <span class="text-gray-500">推荐</span>
+        832×1216 <span class="text-gray-500">NoobAI 推荐</span>
       </button>
       <button type="button" data-w="1024" data-h="1024"
         class="px-2 py-1 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100">
@@ -293,7 +325,7 @@ function pushPromptHistory(payload) {
   // 去重：连续两次完全一样就不再加
   const last = arr[0];
   if (last) {
-    const sameKeys = ['workflow_path','direct_prompt','nl_prompt','rewrite','translate','drop_builtin','width','height','batch'];
+    const sameKeys = ['workflow_path','direct_prompt','nl_prompt','rewrite','override','width','height','batch'];
     const same = sameKeys.every(k => (last[k] ?? null) === (item[k] ?? null));
     if (same) { return last.ts; }
   }
@@ -344,9 +376,9 @@ function renderHist() {
       const realIdx = all.indexOf(it);
       const opts = [];
       if (it.rewrite) opts.push('改写');
-      if (it.translate) opts.push('翻译');
-      if (it.drop_builtin) opts.push('覆写');
-      if (!it.rewrite && !it.translate) opts.push('直出');
+      else if (it.nl_prompt) opts.push('翻译');
+      else opts.push('直出');
+      if (it.override || it.drop_builtin) opts.push('覆写');
       if ((it.batch||1) > 1) opts.push(`批量×${it.batch}`);
       const res = (it.width && it.height) ? `${it.width}×${it.height}` : '默认尺寸';
       return `<div class="border rounded p-2 text-xs hover:bg-gray-50">
@@ -385,19 +417,11 @@ function applyHistItem(it) {
   $('direct').value = it.direct_prompt || '';
   $('nl').value = it.nl_prompt || '';
   $('rewrite').checked = !!it.rewrite;
-  $('translate').checked = !!it.translate;
-  $('drop_builtin').checked = !!it.drop_builtin;
+  $('override').checked = !!(it.override || it.drop_builtin);
   $('width').value = it.width || '';
   $('height').value = it.height || '';
   $('batch').value = it.batch || 1;
   window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-function syncModeCheckboxes(changed) {
-  if (changed === 'rewrite' && $('rewrite').checked) {
-    $('translate').checked = false;
-  } else if (changed === 'translate' && $('translate').checked) {
-    $('rewrite').checked = false;
-  }
 }
 $('hist-list').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-act]');
@@ -436,7 +460,7 @@ $('btn-hist-export').addEventListener('click', () => {
 const galleryState = {
   total: 0,
   loaded: 0,
-  pageSize: 60,
+  pageSize: 5,
 };
 
 function galleryItemHTML(relPath) {
@@ -494,7 +518,62 @@ function prependGalleryItem(filename) {
   refreshLightbox();
 }
 
+// 临时 fork：只在当前浏览器内存里活着，不持久化到 ComfyUI
+let forkedWorkflow = null;       // 完整工作流 JSON（API 或编辑器格式）
+let forkedMeta = null;           // {source_image, format, summary, default_width, default_height, builtin_prompt, loras}
+
+function applyForkedToUI() {
+  const m = forkedMeta;
+  const escapeHtml = (str) => String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const loras = Array.isArray(m.loras) ? m.loras : [];
+  const lorasHtml = loras.length
+    ? `<div class="text-xs text-gray-700 mt-1">Lora: ${loras.map(n => `<span class="inline-block bg-purple-100 text-purple-700 rounded px-1.5 py-0.5 mr-1 mb-0.5 break-all">${escapeHtml(n)}</span>`).join('')}</div>`
+    : '';
+  const s = m.summary || {node_count:'?',link_count:'?',group_count:'?'};
+  $('current-info').innerHTML = `
+    <div class="border-2 border-emerald-500 bg-emerald-50 rounded p-2 flex gap-3 items-start">
+      <div class="text-2xl">🍴</div>
+      <div class="min-w-0 flex-1">
+        <div class="font-medium text-emerald-800">临时 Fork（仅本浏览器，未保存）</div>
+        <div class="text-xs text-gray-600">来源: ${escapeHtml(m.source_image || '')} · 格式: ${m.format} · 节点 ${s.node_count}</div>
+        ${lorasHtml}
+        <button id="btn-clear-fork" class="mt-1 text-xs px-2 py-0.5 bg-gray-200 hover:bg-gray-300 rounded">✕ 清除 Fork，恢复原工作流</button>
+      </div>
+    </div>`;
+  $('btn-clear-fork').addEventListener('click', clearFork);
+
+  defaultRes.w = m.default_width;
+  defaultRes.h = m.default_height;
+  if (defaultRes.w && defaultRes.h) {
+    $('default-res').textContent = `默认 ${defaultRes.w}×${defaultRes.h}（留空即使用默认）`;
+    $('width').placeholder = defaultRes.w;
+    $('height').placeholder = defaultRes.h;
+  } else {
+    $('default-res').textContent = '工作流未声明分辨率';
+    $('width').placeholder = '默认';
+    $('height').placeholder = '默认';
+  }
+  const bp = (m.builtin_prompt || '').trim();
+  if (bp) {
+    $('builtin-text').textContent = bp;
+    $('builtin-box').classList.remove('hidden');
+  } else {
+    $('builtin-box').classList.add('hidden');
+    $('builtin-text').textContent = '';
+  }
+}
+
+function clearFork() {
+  forkedWorkflow = null;
+  forkedMeta = null;
+  loadCurrent();
+}
+
 async function loadCurrent() {
+  if (forkedWorkflow) {
+    applyForkedToUI();
+    return;
+  }
   const path = getCurrentPath();
   if (!path) {
     $('current-info').textContent = '未选中工作流';
@@ -515,9 +594,21 @@ async function loadCurrent() {
     return;
   }
   const s = d.summary;
-  $('current-info').innerHTML = `<div class="flex gap-3 items-center">${thumb}<div>
+  const loras = Array.isArray(d.loras) ? d.loras : [];
+  const escapeHtml = (str) => String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let lorasHtml = '';
+  if (loras.length) {
+    if (d.lora_link) {
+      const url = escapeHtml(d.lora_link);
+      lorasHtml = `<div class="text-xs mt-1"><a href="${url}" target="_blank" rel="noopener noreferrer" class="inline-block bg-purple-100 text-purple-700 hover:bg-purple-200 underline rounded px-1.5 py-0.5 break-all">🔗 Lora 链接</a></div>`;
+    } else {
+      lorasHtml = `<div class="text-xs text-gray-700 mt-1">Lora: ${loras.map(n => `<span class="inline-block bg-purple-100 text-purple-700 rounded px-1.5 py-0.5 mr-1 mb-0.5 break-all">${escapeHtml(n)}</span>`).join('')}</div>`;
+    }
+  }
+  $('current-info').innerHTML = `<div class="flex gap-3 items-center">${thumb}<div class="min-w-0">
     <div class="font-medium">${display}</div>
     <div class="text-xs text-gray-500">节点 ${s.node_count} | 连线 ${s.link_count} | 分组 ${s.group_count}</div>
+    ${lorasHtml}
   </div></div>`;
 
   defaultRes.w = d.default_width;
@@ -539,6 +630,15 @@ async function loadCurrent() {
     $('width').placeholder = '默认';
     $('height').placeholder = '默认';
   }
+
+  const bp = (d.builtin_prompt || '').trim();
+  if (bp) {
+    $('builtin-text').textContent = bp;
+    $('builtin-box').classList.remove('hidden');
+  } else {
+    $('builtin-box').classList.add('hidden');
+    $('builtin-text').textContent = '';
+  }
 }
 
 async function loadList() {
@@ -551,9 +651,12 @@ async function loadList() {
 
 function renderList() {
   const q = $('search').value.toLowerCase().trim();
-  const filtered = q
+  const isNoLora = (w) => /无\s*lora/i.test(w.path || '');
+  let filtered = q
     ? allWorkflows.filter(w => (w.path || '').toLowerCase().includes(q))
-    : allWorkflows;
+    : allWorkflows.slice();
+  // 「无 Lora」工作流置顶
+  filtered.sort((a, b) => (isNoLora(b) ? 1 : 0) - (isNoLora(a) ? 1 : 0));
   if (!filtered.length) {
     $('wf-list').innerHTML = '<div class="p-2 text-gray-400">无</div>';
     return;
@@ -569,10 +672,18 @@ function renderList() {
       const thumb = w.thumbnail
         ? `<img src="/api/thumbnail?path=${encodeURIComponent(w.path)}" class="w-12 h-12 object-cover rounded bg-gray-50" loading="lazy" />`
         : `<div class="w-12 h-12 rounded bg-gray-100 flex items-center justify-center text-gray-300 text-[10px]">无图</div>`;
-      return `<div class="wf-item border rounded p-1.5 cursor-pointer hover:bg-blue-50 hover:border-blue-300 flex flex-col items-center gap-0.5 w-16" data-path="${w.path}">
+      const noLora = isNoLora(w);
+      const cardCls = noLora
+        ? 'wf-item relative border-2 border-amber-400 ring-2 ring-amber-200 bg-amber-50 rounded p-1.5 cursor-pointer hover:bg-amber-100 flex flex-col items-center gap-0.5 w-16 overflow-hidden'
+        : 'wf-item border rounded p-1.5 cursor-pointer hover:bg-blue-50 hover:border-blue-300 flex flex-col items-center gap-0.5 w-16 overflow-hidden';
+      const badge = noLora
+        ? `<span class="absolute -top-1 -right-1 bg-amber-500 text-white text-[9px] leading-none px-1 py-0.5 rounded shadow">★</span>`
+        : '';
+      return `<div class="${cardCls}" data-path="${w.path}" title="${w.path}">
+         ${badge}
          ${thumb}
-         <span class="text-[11px] font-medium whitespace-nowrap">${model}</span>
-         <span class="text-[10px] text-gray-500 whitespace-nowrap">${custom}</span>
+         <span class="text-[11px] font-medium leading-tight break-all text-center w-full line-clamp-2">${model}</span>
+         <span class="text-[10px] text-gray-500 leading-tight break-all text-center w-full line-clamp-1">${custom}</span>
        </div>`;
     }).join('') +
     `</div>`;
@@ -591,6 +702,9 @@ function setCurrentPath(path) {
 }
 
 async function selectWorkflow(path) {
+  // 切换工作流意味着放弃临时 fork
+  forkedWorkflow = null;
+  forkedMeta = null;
   setCurrentPath(path);
   $('current-info').textContent = `加载 ${path} ...`;
   await loadCurrent();
@@ -613,22 +727,16 @@ function startRun() {
   const direct = $('direct').value.trim();
   const nl = $('nl').value.trim();
   const rewrite = $('rewrite').checked;
-  const translate = $('translate').checked;
-  const useLlm = rewrite || translate;
-  if (!useLlm && !direct) {
-    alert('未启用改写/翻译时，请先填写直接 Tag。自然语言描述不会参与生成。');
-    return;
-  }
   if (!direct && !nl) {
     if (!confirm('未输入任何 prompt，使用工作流内置 prompt？')) return;
   }
   const payload = {
-    workflow_path: getCurrentPath(),
+    workflow_path: forkedWorkflow ? '' : getCurrentPath(),
+    inline_workflow: forkedWorkflow || null,
     direct_prompt: direct,
-    nl_prompt: useLlm ? nl : '',
+    nl_prompt: nl,
     rewrite,
-    translate,
-    drop_builtin: $('drop_builtin').checked,
+    override: $('override').checked,
     width: parseInt($('width').value) || null,
     height: parseInt($('height').value) || null,
     batch: Math.max(1, Math.min(50, parseInt($('batch').value) || 1)),
@@ -720,18 +828,23 @@ function finishRun() {
   mirroring = false;
 }
 
-async function cancelRun() {
-  appendLog('请求取消...');
-  await fetch('/api/interrupt', {method: 'POST'});
-  if (activeWS) try { activeWS.close(); } catch {}
+function cancelRun() {
+  appendLog('已取消');
+  const ws = activeWS;
+  activeWS = null;
+  if (ws) {
+    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+    try { ws.close(); } catch {}
+  }
+  $('progress-text').textContent = '已取消';
+  finishRun();
+  fetch('/api/interrupt', {method: 'POST'}).catch(() => {});
 }
 
 $('btn-refresh').addEventListener('click', () => { loadCurrent(); loadList(); });
 $('search').addEventListener('input', renderList);
 $('btn-run').addEventListener('click', startRun);
 $('btn-cancel').addEventListener('click', cancelRun);
-$('rewrite').addEventListener('change', () => syncModeCheckboxes('rewrite'));
-$('translate').addEventListener('change', () => syncModeCheckboxes('translate'));
 $('btn-reset-res').addEventListener('click', () => {
   $('width').value = '';
   $('height').value = '';
@@ -853,80 +966,138 @@ setInterval(() => {
   }
 }, 1000);
 
-// 灯箱：所有 .glightbox 元素同组，可键盘左右翻页；图库图片会异步读取 prompt 元数据
-const promptCache = new Map();
-let lightbox = GLightbox({
-  selector: '.glightbox',
-  loop: true,
-  touchNavigation: true,
-  keyboardNavigation: true,
-  descPosition: 'bottom',
-});
+// ========== 自建灯箱（替代 GLightbox，避免它操纵 DOM 把图区搞消失）==========
+const lbState = { items: [], index: 0 };
 
-async function injectPromptIntoLightbox(slide) {
-  if (!slide || !slide.trigger) return;
-  const rel = slide.trigger.dataset.relPath;
-  if (!rel) return;
-  const descEl = slide.slideNode && slide.slideNode.querySelector('.gdesc-inner');
-  if (!descEl) return;
+function collectLightboxItems() {
+  // 所有 .glightbox 链接，按 DOM 顺序
+  return Array.from(document.querySelectorAll('a.glightbox')).map(a => ({
+    url: a.getAttribute('href'),
+    title: a.dataset.title || '',
+    relPath: a.dataset.relPath || '',
+  }));
+}
 
-  let text = promptCache.get(rel);
-  if (text === undefined) {
-    descEl.textContent = '加载 prompt 中...';
-    try {
-      const r = await fetch('/api/output/meta?path=' + encodeURIComponent(rel));
-      const d = await r.json();
-      text = d.positive || (d.supported === false ? '（仅支持 PNG 元数据）' : '（无 prompt 元数据）');
-    } catch (e) {
-      text = '读取失败：' + e;
+function openLightboxFromAnchor(a) {
+  lbState.items = collectLightboxItems();
+  lbState.index = Math.max(0, lbState.items.findIndex(it => it.url === a.getAttribute('href')));
+  showLightbox();
+}
+
+function showLightbox() {
+  const it = lbState.items[lbState.index];
+  if (!it) return;
+  $('lb-img').src = it.url;
+  $('lb-title').textContent = it.title || '';
+  $('lb-status').textContent = '';
+  $('lb-creator').textContent = '';
+  const fb = $('lb-fork');
+  fb.disabled = false;
+  fb.textContent = '🍴 Fork 工作流';
+  fb.dataset.rel = it.relPath || '';
+  const dl = $('lb-download');
+  if (dl) {
+    let fullUrl = it.url;
+    if (fullUrl.startsWith('/api/output/file')) {
+      fullUrl += (fullUrl.includes('?') ? '&' : '?') + 'full=1';
     }
-    promptCache.set(rel, text);
+    dl.href = fullUrl;
+    dl.download = it.title || '';
   }
-
-  descEl.innerHTML = '';
-  const pre = document.createElement('pre');
-  pre.className = 'whitespace-pre-wrap break-words text-xs font-mono max-h-40 overflow-y-auto bg-black/40 p-2 rounded';
-  pre.style.color = '#fff';
-  pre.textContent = text;
-
-  const bar = document.createElement('div');
-  bar.className = 'mt-1 flex gap-2 flex-wrap';
-  bar.innerHTML = `
-    <button type="button" class="lb-copy text-xs px-2 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600">复制</button>
-    <button type="button" class="lb-fill text-xs px-2 py-0.5 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">填到「直接 Tag」</button>
-  `;
-  descEl.appendChild(pre);
-  descEl.appendChild(bar);
-
-  bar.querySelector('.lb-copy').addEventListener('click', async (e) => {
-    e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(text);
-      e.target.textContent = '已复制';
-      setTimeout(() => { e.target.textContent = '复制'; }, 1200);
-    } catch {
-      alert('复制失败');
-    }
-  });
-  bar.querySelector('.lb-fill').addEventListener('click', (e) => {
-    e.stopPropagation();
-    $('direct').value = text;
-    lightbox.close();
-    $('direct').focus();
-  });
+  // 异步拉取生图者 IP
+  if (it.relPath) {
+    fetch('/api/output/creator?path=' + encodeURIComponent(it.relPath))
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.creator_ip) $('lb-creator').textContent = '生图者: ' + d.creator_ip;
+      })
+      .catch(() => {});
+  }
+  $('lb-root').classList.add('open');
 }
 
-lightbox.on('slide_changed', ({ current }) => injectPromptIntoLightbox(current));
-lightbox.on('open', () => {
-  setTimeout(() => {
-    const current = lightbox.getActiveSlide && lightbox.getActiveSlide();
-    if (current) injectPromptIntoLightbox(current);
-  }, 50);
+function closeLightbox() { $('lb-root').classList.remove('open'); $('lb-img').src = ''; }
+function prevLightbox() { if (!lbState.items.length) return; lbState.index = (lbState.index - 1 + lbState.items.length) % lbState.items.length; showLightbox(); }
+function nextLightbox() { if (!lbState.items.length) return; lbState.index = (lbState.index + 1) % lbState.items.length; showLightbox(); }
+
+document.addEventListener('click', (e) => {
+  const a = e.target.closest && e.target.closest('a.glightbox');
+  if (!a) return;
+  e.preventDefault();
+  openLightboxFromAnchor(a);
 });
 
-function refreshLightbox() {
-  try { lightbox.reload(); } catch {}
-}
+$('lb-close').addEventListener('click', closeLightbox);
+$('lb-prev').addEventListener('click', prevLightbox);
+$('lb-next').addEventListener('click', nextLightbox);
+$('lb-root').addEventListener('click', (e) => {
+  // 点击空白处关闭（图片本身和工具栏不触发）
+  if (e.target === $('lb-root') || e.target === $('lb-img-wrap')) closeLightbox();
+});
+document.addEventListener('keydown', (e) => {
+  if (!$('lb-root').classList.contains('open')) return;
+  if (e.key === 'Escape') closeLightbox();
+  else if (e.key === 'ArrowLeft') prevLightbox();
+  else if (e.key === 'ArrowRight') nextLightbox();
+});
+
+$('lb-fork').addEventListener('click', async () => {
+  const rel = $('lb-fork').dataset.rel;
+  if (!rel) { $('lb-status').textContent = '此图无路径信息'; return; }
+  const fb = $('lb-fork');
+  fb.disabled = true;
+  fb.textContent = 'Fork 中...';
+  $('lb-status').textContent = '';
+  try {
+    const r = await fetch('/api/output/fork', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({path: rel}),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+    forkedWorkflow = d.workflow;
+    forkedMeta = {
+      source_image: d.source_image || rel,
+      format: d.format,
+      summary: d.summary,
+      default_width: d.default_width,
+      default_height: d.default_height,
+      builtin_prompt: d.builtin_prompt,
+      loras: d.loras,
+    };
+    applyForkedToUI();
+    $('lb-status').textContent = '✓ 已在本浏览器临时还原，可直接生图';
+    setTimeout(closeLightbox, 600);
+  } catch (err) {
+    $('lb-status').textContent = '失败: ' + (err.message || err);
+    fb.disabled = false;
+    fb.textContent = '🍴 Fork 工作流';
+  }
+});
+
+function refreshLightbox() { /* 兼容老调用：自建灯箱实时收集，无需 reload */ }
+
+// 18+ 年龄确认
+(function ageGate() {
+  if (localStorage.getItem('ageConfirmed') === '1') return;
+  const gate = $('age-gate');
+  const blocker = $('age-blocker');
+  gate.classList.remove('hidden');
+  blocker.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  $('age-accept').addEventListener('click', () => {
+    localStorage.setItem('ageConfirmed', '1');
+    gate.classList.add('hidden');
+    blocker.classList.add('hidden');
+    document.body.style.overflow = '';
+  });
+  $('age-leave').addEventListener('click', () => {
+    window.open('', '_self');
+    window.close();
+    location.replace('https://www.google.com');
+  });
+})();
 
 loadCurrent();
 loadList();

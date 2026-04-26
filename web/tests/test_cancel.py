@@ -70,7 +70,7 @@ class CancelDuringLlmTests(unittest.IsolatedAsyncioTestCase):
         app._current_run_task = None
         app._active_cancel_event = asyncio.Event()
 
-        req = app.RunRequest(workflow_path="wf.json", nl_prompt="翻译这个", translate=True)
+        req = app.RunRequest(workflow_path="wf.json", nl_prompt="翻译这个")
         ws = FakeWebSocket()
         run_task = asyncio.create_task(app._run_task(ws, req))
         await translate_started.wait()
