@@ -7,7 +7,7 @@ ComfyUI 网页版控制台
 # ========== IP / 端口配置 ==========
 COMFYUI_HOST = "127.0.0.1"
 COMFYUI_PORT = 8188
-LMS_HOST = "127.0.0.1"
+LMS_HOST = "192.168.2.21"
 LMS_PORT = 1234
 
 WEB_HOST = "127.0.0.1"

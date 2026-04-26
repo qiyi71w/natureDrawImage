@@ -86,13 +86,13 @@
     </div>
     <details class="text-xs text-gray-600 mb-3 bg-gray-50 border border-gray-200 rounded p-2">
       <summary class="cursor-pointer select-none font-medium text-gray-700">
-        📖 N / R / D / B 如何组合成最终 prompt（点开看清单）
+        📖 N / R / T / D / B 如何组合成最终 prompt（点开看清单）
       </summary>
       <div class="mt-2 space-y-3">
         <div class="bg-white border rounded p-2">
           <div class="font-semibold text-gray-700 mb-1">五个变量</div>
           <ul class="space-y-1">
-            <li><b class="text-blue-700">N</b> = 自然语言框（-t）。<u>是否调 LLM 完全看 N 有没有填</u>。</li>
+            <li><b class="text-blue-700">N</b> = 自然语言框（-t）。只有 R 或 T 开启时才会参与 LLM。</li>
             <li><b class="text-blue-700">R</b> = 改写模式（-r）。仅在 N 非空时生效。</li>
             <li><b class="text-blue-700">T</b> = 翻译模式。仅在 N 非空时生效。</li>
             <li><b class="text-blue-700">D</b> = 直接 Tag 框（-d），手写英文 tag。</li>
@@ -100,7 +100,7 @@
           </ul>
           <div class="mt-2 text-gray-500">
             统一记号：<code>底本 = B , D</code>（按顺序拼接，空的跳过）<br>
-            勾选「覆写模式」后：<code>底本 = D</code>，B 不参与任何分支。
+            勾选「覆写模式」后：<code>底本 = D</code>，B 不参与改写或翻译。
           </div>
         </div>
 
@@ -121,7 +121,7 @@
                 <td class="border px-1 py-1"><code>D</code></td>
               </tr>
               <tr>
-                <td class="border px-1 py-1">N 空</td>
+                <td class="border px-1 py-1">N 空 + R/T 任一开</td>
                 <td class="border px-1 py-1 text-gray-500">不调用</td>
                 <td class="border px-1 py-1"><code>底本</code></td>
               </tr>
@@ -140,7 +140,7 @@
         </div>
 
         <div class="bg-white border rounded p-2 text-gray-600">
-          改写模式和翻译模式互斥。两个都不勾选时，即使 N 里有内容，也会直接跳过 LLM，仅使用直接 Tag。只有未勾选「覆写模式」时，B 才会参与。
+          改写模式和翻译模式互斥。两个都不勾选时，即使 N 里有内容，也会直接跳过 LLM，仅使用直接 Tag。覆写模式只控制 B 是否进入底本，不改变 R/T 的互斥和直出规则。
         </div>
       </div>
     </details>
