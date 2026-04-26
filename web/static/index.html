@@ -67,8 +67,9 @@
     <textarea id="nl" rows="3" placeholder="可选：中文/英文自然语言，会经过 LLM 处理"
       class="w-full border rounded px-2 py-1 mb-3 text-sm"></textarea>
 
-    <div class="flex gap-4 mb-1 text-sm">
-      <label class="flex items-center gap-1"><input type="checkbox" id="rewrite" checked /> 改写模式 (-r)</label>
+    <div class="flex gap-4 mb-1 text-sm flex-wrap">
+      <label class="flex items-center gap-1"><input type="checkbox" id="rewrite" /> 改写模式 (-r)</label>
+      <label class="flex items-center gap-1"><input type="checkbox" id="translate" /> 翻译模式</label>
       <label class="flex items-center gap-1"><input type="checkbox" id="drop_builtin" /> 丢弃内置 B</label>
     </div>
     <details class="text-xs text-gray-600 mb-3 bg-gray-50 border border-gray-200 rounded p-2">
@@ -81,6 +82,7 @@
           <ul class="space-y-1">
             <li><b class="text-blue-700">N</b> = 自然语言框（-t）。<u>是否调 LLM 完全看 N 有没有填</u>。</li>
             <li><b class="text-blue-700">R</b> = 改写模式（-r）。仅在 N 非空时生效。</li>
+            <li><b class="text-blue-700">T</b> = 翻译模式。仅在 N 非空时生效。</li>
             <li><b class="text-blue-700">D</b> = 直接 Tag 框（-d），手写英文 tag。</li>
             <li><b class="text-blue-700">B</b> = 工作流内置 prompt，上面那个只读框。</li>
           </ul>
@@ -91,7 +93,7 @@
         </div>
 
         <div class="bg-white border rounded p-2">
-          <div class="font-semibold text-gray-700 mb-1">三种情况</div>
+          <div class="font-semibold text-gray-700 mb-1">四种情况</div>
           <table class="w-full border-collapse text-[11px]">
             <thead class="bg-gray-100">
               <tr>
@@ -102,12 +104,17 @@
             </thead>
             <tbody class="align-top">
               <tr>
+                <td class="border px-1 py-1">R 关 + T 关</td>
+                <td class="border px-1 py-1 text-gray-500">不调用</td>
+                <td class="border px-1 py-1"><code>底本</code></td>
+              </tr>
+              <tr>
                 <td class="border px-1 py-1">N 空</td>
                 <td class="border px-1 py-1 text-gray-500">不调用</td>
                 <td class="border px-1 py-1"><code>底本</code></td>
               </tr>
               <tr>
-                <td class="border px-1 py-1">N 有 + R 关</td>
+                <td class="border px-1 py-1">N 有 + T 开</td>
                 <td class="border px-1 py-1">把 N 翻成英文 tag</td>
                 <td class="border px-1 py-1"><code>底本 , 翻译(N)</code></td>
               </tr>
@@ -121,12 +128,12 @@
         </div>
 
         <div class="bg-white border rounded p-2 text-gray-600">
-          只有未勾选「丢弃内置 B」时，B 才会参与。改写模式下 LLM 会智能修改/删除/补充底本，最终只输出重写后的内容。
+          改写模式和翻译模式互斥。两个都不勾选时，即使 N 里有内容，也会直接跳过 LLM，仅使用底本生成。只有未勾选「丢弃内置 B」时，B 才会参与。
         </div>
       </div>
     </details>
 
-    <div class="flex gap-2 items-end mb-2 text-sm">
+    <div class="flex flex-wrap gap-2 items-end mb-2 text-sm">
       <div>
         <label class="block text-xs text-gray-500 mb-0.5">宽 width</label>
         <input id="width" type="number" min="64" step="8" placeholder="默认"
@@ -139,11 +146,11 @@
       </div>
       <button id="btn-reset-res" type="button"
         class="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-xs">恢复默认</button>
-      <span id="default-res" class="text-xs text-gray-500"></span>
-      <div class="ml-auto flex items-center gap-1">
+      <span id="default-res" class="text-xs text-gray-500 w-full sm:w-auto order-last sm:order-none"></span>
+      <div class="w-full sm:w-auto sm:ml-auto flex items-center justify-end gap-1">
         <label for="batch" class="block text-xs text-gray-500">批量</label>
         <input id="batch" type="number" min="1" max="50" value="1"
-          class="w-16 border rounded px-2 py-1" />
+          class="w-16 shrink-0 border rounded px-2 py-1" />
         <span class="text-xs text-gray-400">张</span>
       </div>
     </div>
@@ -265,11 +272,21 @@ function pushPromptHistory(payload) {
   // 去重：连续两次完全一样就不再加
   const last = arr[0];
   if (last) {
-    const sameKeys = ['workflow_path','direct_prompt','nl_prompt','rewrite','drop_builtin','width','height','batch'];
+    const sameKeys = ['workflow_path','direct_prompt','nl_prompt','rewrite','translate','drop_builtin','width','height','batch'];
     const same = sameKeys.every(k => (last[k] ?? null) === (item[k] ?? null));
-    if (same) { return; }
+    if (same) { return last.ts; }
   }
   arr.unshift(item);
+  saveHist(arr);
+  renderHist();
+  return item.ts;
+}
+function updatePromptHistoryFinalPrompt(ts, finalPrompt) {
+  if (!ts || !finalPrompt) return;
+  const arr = loadHist();
+  const idx = arr.findIndex(it => it.ts === ts);
+  if (idx < 0) return;
+  arr[idx] = { ...arr[idx], final_prompt: finalPrompt };
   saveHist(arr);
   renderHist();
 }
@@ -288,39 +305,56 @@ function renderHist() {
   $('hist-count').textContent = all.length;
   const q = ($('hist-search').value || '').toLowerCase().trim();
   const filtered = q
-    ? all.filter(it => [it.workflow_path, it.direct_prompt, it.nl_prompt]
+    ? all.filter(it => [it.workflow_path, it.direct_prompt, it.nl_prompt, it.final_prompt]
         .some(s => (s||'').toLowerCase().includes(q)))
     : all;
   if (!filtered.length) {
     $('hist-list').innerHTML = '<div class="text-xs text-gray-400 p-2">暂无历史</div>';
     return;
   }
-  $('hist-list').innerHTML = filtered.map((it, idx) => {
-    const realIdx = all.indexOf(it);
+  const groups = new Map();
+  for (const it of filtered) {
     const wf = (it.workflow_path || '').replace(/\.json$/i, '') || '(无工作流)';
-    const opts = [];
-    if (it.rewrite) opts.push('改写');
-    if (it.drop_builtin) opts.push('丢弃B');
-    if ((it.batch||1) > 1) opts.push(`批量×${it.batch}`);
-    const res = (it.width && it.height) ? `${it.width}×${it.height}` : '默认尺寸';
-    return `<div class="border rounded p-2 text-xs hover:bg-gray-50">
-      <div class="flex items-center justify-between gap-2 mb-1">
-        <div class="font-medium text-gray-700 truncate" title="${escHtml(wf)}">📂 ${escHtml(wf)}</div>
-        <div class="text-gray-400 whitespace-nowrap">${fmtTime(it.ts)}</div>
+    if (!groups.has(wf)) groups.set(wf, []);
+    groups.get(wf).push(it);
+  }
+  $('hist-list').innerHTML = Array.from(groups.entries()).map(([wf, items]) => {
+    const cards = items.map((it) => {
+      const realIdx = all.indexOf(it);
+      const opts = [];
+      if (it.rewrite) opts.push('改写');
+      if (it.translate) opts.push('翻译');
+      if (it.drop_builtin) opts.push('丢弃B');
+      if (!it.rewrite && !it.translate) opts.push('直出');
+      if ((it.batch||1) > 1) opts.push(`批量×${it.batch}`);
+      const res = (it.width && it.height) ? `${it.width}×${it.height}` : '默认尺寸';
+      return `<div class="border rounded p-2 text-xs hover:bg-gray-50">
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <div class="text-gray-400 whitespace-nowrap">${fmtTime(it.ts)}</div>
+        </div>
+        <div class="flex flex-wrap gap-1 mb-1">
+          ${opts.map(o => `<span class="px-1.5 bg-blue-100 text-blue-700 rounded">${o}</span>`).join('')}
+          <span class="px-1.5 bg-gray-100 text-gray-600 rounded">${res}</span>
+        </div>
+        ${it.direct_prompt ? `<div class="font-mono text-gray-700 break-words"><span class="text-gray-400">D:</span> ${escHtml(it.direct_prompt)}</div>` : ''}
+        ${it.nl_prompt ? `<div class="text-gray-700 break-words"><span class="text-gray-400">N:</span> ${escHtml(it.nl_prompt)}</div>` : ''}
+        ${it.final_prompt ? `<div class="mt-1 font-mono text-emerald-800 bg-emerald-50 border border-emerald-100 rounded p-1 break-words"><span class="text-emerald-600">最终:</span> ${escHtml(it.final_prompt)}</div>` : ''}
+        <div class="mt-1 flex gap-2 flex-wrap">
+          <button data-act="apply" data-idx="${realIdx}" class="px-2 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600">填回表单</button>
+          <button data-act="copy-d" data-idx="${realIdx}" class="px-2 py-0.5 bg-gray-200 rounded hover:bg-gray-300">复制 D</button>
+          <button data-act="copy-n" data-idx="${realIdx}" class="px-2 py-0.5 bg-gray-200 rounded hover:bg-gray-300">复制 N</button>
+          ${it.final_prompt ? `<button data-act="copy-final" data-idx="${realIdx}" class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded hover:bg-emerald-200">复制最终</button>` : ''}
+          <button data-act="del" data-idx="${realIdx}" class="px-2 py-0.5 bg-red-100 text-red-700 rounded hover:bg-red-200 sm:ml-auto">删除</button>
+        </div>
+      </div>`;
+    }).join('');
+    return `<section class="border rounded-lg overflow-hidden">
+      <div class="px-3 py-2 bg-slate-50 border-b flex items-center justify-between gap-2">
+        <div class="font-medium text-sm text-slate-700 truncate" title="${escHtml(wf)}">📂 ${escHtml(wf)}</div>
+        <div class="text-xs text-slate-400 shrink-0">${items.length} 条</div>
       </div>
-      <div class="flex flex-wrap gap-1 mb-1">
-        ${opts.map(o => `<span class="px-1.5 bg-blue-100 text-blue-700 rounded">${o}</span>`).join('')}
-        <span class="px-1.5 bg-gray-100 text-gray-600 rounded">${res}</span>
-      </div>
-      ${it.direct_prompt ? `<div class="font-mono text-gray-700 break-words"><span class="text-gray-400">D:</span> ${escHtml(it.direct_prompt)}</div>` : ''}
-      ${it.nl_prompt ? `<div class="text-gray-700 break-words"><span class="text-gray-400">N:</span> ${escHtml(it.nl_prompt)}</div>` : ''}
-      <div class="mt-1 flex gap-2">
-        <button data-act="apply" data-idx="${realIdx}" class="px-2 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600">填回表单</button>
-        <button data-act="copy-d" data-idx="${realIdx}" class="px-2 py-0.5 bg-gray-200 rounded hover:bg-gray-300">复制 D</button>
-        <button data-act="copy-n" data-idx="${realIdx}" class="px-2 py-0.5 bg-gray-200 rounded hover:bg-gray-300">复制 N</button>
-        <button data-act="del" data-idx="${realIdx}" class="px-2 py-0.5 bg-red-100 text-red-700 rounded hover:bg-red-200 ml-auto">删除</button>
-      </div>
-    </div>`;
+      <div class="p-2 space-y-2">${cards}</div>
+    </section>`;
   }).join('');
 }
 function applyHistItem(it) {
@@ -330,11 +364,19 @@ function applyHistItem(it) {
   $('direct').value = it.direct_prompt || '';
   $('nl').value = it.nl_prompt || '';
   $('rewrite').checked = !!it.rewrite;
+  $('translate').checked = !!it.translate;
   $('drop_builtin').checked = !!it.drop_builtin;
   $('width').value = it.width || '';
   $('height').value = it.height || '';
   $('batch').value = it.batch || 1;
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function syncModeCheckboxes(changed) {
+  if (changed === 'rewrite' && $('rewrite').checked) {
+    $('translate').checked = false;
+  } else if (changed === 'translate' && $('translate').checked) {
+    $('rewrite').checked = false;
+  }
 }
 $('hist-list').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-act]');
@@ -347,6 +389,7 @@ $('hist-list').addEventListener('click', (e) => {
   if (act === 'apply') applyHistItem(it);
   else if (act === 'copy-d') navigator.clipboard.writeText(it.direct_prompt || '');
   else if (act === 'copy-n') navigator.clipboard.writeText(it.nl_prompt || '');
+  else if (act === 'copy-final') navigator.clipboard.writeText(it.final_prompt || '');
   else if (act === 'del') {
     arr.splice(idx, 1);
     saveHist(arr);
@@ -524,6 +567,7 @@ async function selectWorkflow(path) {
 
 let activeWS = null;
 let currentPrompt = '';
+let activeHistoryTs = null;
 
 function appendLog(line) {
   const el = $('log');
@@ -545,13 +589,14 @@ function startRun() {
     direct_prompt: direct,
     nl_prompt: nl,
     rewrite: $('rewrite').checked,
+    translate: $('translate').checked,
     drop_builtin: $('drop_builtin').checked,
     width: parseInt($('width').value) || null,
     height: parseInt($('height').value) || null,
     batch: Math.max(1, Math.min(50, parseInt($('batch').value) || 1)),
   };
 
-  pushPromptHistory(payload);
+  activeHistoryTs = pushPromptHistory(payload);
 
   $('progress-box').classList.remove('hidden');
   $('result-box').classList.add('hidden');
@@ -598,6 +643,7 @@ function handleMsg(m) {
     currentPrompt = m.final_prompt || '';
     $('final-prompt').textContent = m.final_prompt;
     $('result-box').classList.remove('hidden');
+    updatePromptHistoryFinalPrompt(activeHistoryTs, m.final_prompt);
   } else if (m.type === 'image') {
     const div = document.createElement('div');
     div.innerHTML = `<a href="${m.url}" data-gallery="main" data-title="${m.filename}" class="glightbox">
@@ -615,7 +661,10 @@ function handleMsg(m) {
   } else if (m.type === 'done') {
     appendLog(`✅ 完成，共 ${m.count} 张`);
     $('progress-text').textContent = '完成';
-    if (m.final_prompt) $('final-prompt').textContent = m.final_prompt;
+    if (m.final_prompt) {
+      $('final-prompt').textContent = m.final_prompt;
+      updatePromptHistoryFinalPrompt(activeHistoryTs, m.final_prompt);
+    }
     finishRun();
   } else if (m.type === 'error') {
     appendLog('❌ ' + m.message);
@@ -628,6 +677,7 @@ function finishRun() {
   $('btn-run').disabled = false;
   $('btn-cancel').classList.add('hidden');
   activeWS = null;
+  activeHistoryTs = null;
   globalBusy = false;
   mirroring = false;
 }
@@ -642,6 +692,8 @@ $('btn-refresh').addEventListener('click', () => { loadCurrent(); loadList(); })
 $('search').addEventListener('input', renderList);
 $('btn-run').addEventListener('click', startRun);
 $('btn-cancel').addEventListener('click', cancelRun);
+$('rewrite').addEventListener('change', () => syncModeCheckboxes('rewrite'));
+$('translate').addEventListener('change', () => syncModeCheckboxes('translate'));
 $('btn-reset-res').addEventListener('click', () => {
   $('width').value = '';
   $('height').value = '';

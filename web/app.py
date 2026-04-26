@@ -617,6 +617,7 @@ class RunRequest(BaseModel):
     direct_prompt: str = ""
     nl_prompt: str = ""
     rewrite: bool = False
+    translate: bool = False
     drop_builtin: bool = False
     width: Optional[int] = None
     height: Optional[int] = None
@@ -784,7 +785,8 @@ async def _run_task(ws: WebSocket, req: RunRequest):
     sep = ", "
     base_parts, base = build_prompt_base(builtin, req.direct_prompt, req.drop_builtin, sep=sep)
 
-    if req.nl_prompt:
+    use_llm = bool(req.nl_prompt and (req.rewrite or req.translate))
+    if use_llm:
         await emit(ws, {"type": "log", "message": f"[2/4] LLM {'改写' if req.rewrite else '翻译'}中..."})
         await emit(ws, {"type": "llm_start"})
         await _push_status({"stage": "llm"})
