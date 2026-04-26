@@ -317,6 +317,9 @@ function pushHistory(item) {
 // ============== 提示词历史（localStorage） ==============
 const HIST_KEY = 'promptHistoryV1';
 const HIST_MAX = 200;
+const HIST_COLLAPSE_KEY = 'promptHistoryCollapsedWorkflowsV1';
+const HIST_EXPAND_KEY = 'promptHistoryExpandedWorkflowsV1';
+const HIST_IMAGE_MIGRATION_KEY = 'promptHistoryImageMigrationV1';
 
 function loadHist() {
   try { return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); }
@@ -325,6 +328,22 @@ function loadHist() {
 function saveHist(arr) {
   try { localStorage.setItem(HIST_KEY, JSON.stringify(arr.slice(0, HIST_MAX))); }
   catch (e) { console.warn('保存历史失败', e); }
+}
+function loadHistCollapsed() {
+  try { return new Set(JSON.parse(localStorage.getItem(HIST_COLLAPSE_KEY) || '[]')); }
+  catch { return new Set(); }
+}
+function saveHistCollapsed(set) {
+  try { localStorage.setItem(HIST_COLLAPSE_KEY, JSON.stringify(Array.from(set))); }
+  catch (e) { console.warn('保存折叠状态失败', e); }
+}
+function loadHistExpanded() {
+  try { return new Set(JSON.parse(localStorage.getItem(HIST_EXPAND_KEY) || '[]')); }
+  catch { return new Set(); }
+}
+function saveHistExpanded(set) {
+  try { localStorage.setItem(HIST_EXPAND_KEY, JSON.stringify(Array.from(set))); }
+  catch (e) { console.warn('保存展开状态失败', e); }
 }
 function pushPromptHistory(payload) {
   const arr = loadHist();
@@ -350,10 +369,40 @@ function updatePromptHistoryFinalPrompt(ts, finalPrompt) {
   saveHist(arr);
   renderHist();
 }
+function updatePromptHistoryImage(ts, imagePath) {
+  if (!ts || !imagePath) return;
+  const arr = loadHist();
+  const idx = arr.findIndex(it => it.ts === ts);
+  if (idx < 0 || arr[idx].image_path) return;
+  arr[idx] = { ...arr[idx], image_path: imagePath };
+  saveHist(arr);
+  renderHist();
+}
 function escHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
   }[c]));
+}
+function normalizePromptForMatch(s) {
+  return String(s || '').replace(/\s+/g, ' ').trim();
+}
+function getHistLlmMode(it) {
+  if (it.llm_mode) return it.llm_mode;
+  if (it.rewrite) return 'rewrite';
+  if (it.nl_prompt) return 'translate';
+  return 'direct';
+}
+function histPreviewHTML(it) {
+  const path = it.image_path || '';
+  if (!path) {
+    return '<div class="hist-preview w-20 h-20 shrink-0 rounded border bg-gray-100 text-gray-400 flex items-center justify-center text-[11px] text-center px-1">图片已删除</div>';
+  }
+  const url = '/api/output/file?path=' + encodeURIComponent(path);
+  return `<div class="hist-preview w-20 h-20 shrink-0 rounded border bg-gray-100 overflow-hidden">
+    <img src="${url}" loading="lazy" decoding="async"
+      class="w-full h-full object-cover"
+      onerror="this.parentElement.outerHTML='<div class=&quot;hist-preview w-20 h-20 shrink-0 rounded border bg-gray-100 text-gray-400 flex items-center justify-center text-[11px] text-center px-1&quot;>图片已删除</div>'" />
+  </div>`;
 }
 function fmtTime(ts) {
   const d = new Date(ts);
@@ -378,42 +427,53 @@ function renderHist() {
     if (!groups.has(wf)) groups.set(wf, []);
     groups.get(wf).push(it);
   }
+  const collapsedWorkflows = loadHistCollapsed();
+  const expandedWorkflows = loadHistExpanded();
   $('hist-list').innerHTML = Array.from(groups.entries()).map(([wf, items]) => {
+    const collapsed = collapsedWorkflows.has(wf) || !expandedWorkflows.has(wf);
     const cards = items.map((it) => {
       const realIdx = all.indexOf(it);
       const opts = [];
-      if (it.rewrite) opts.push('改写');
-      else if (it.nl_prompt) opts.push('翻译');
+      const llmMode = getHistLlmMode(it);
+      if (llmMode === 'rewrite') opts.push('改写');
+      else if (llmMode === 'expand') opts.push('联想');
+      else if (llmMode === 'translate') opts.push('翻译');
       else opts.push('直出');
       if (it.override || it.drop_builtin) opts.push('覆写');
       if ((it.batch||1) > 1) opts.push(`批量×${it.batch}`);
       const res = (it.width && it.height) ? `${it.width}×${it.height}` : '默认尺寸';
-      return `<div class="border rounded p-2 text-xs hover:bg-gray-50">
-        <div class="flex items-center justify-between gap-2 mb-1">
-          <div class="text-gray-400 whitespace-nowrap">${fmtTime(it.ts)}</div>
-        </div>
-        <div class="flex flex-wrap gap-1 mb-1">
-          ${opts.map(o => `<span class="px-1.5 bg-blue-100 text-blue-700 rounded">${o}</span>`).join('')}
-          <span class="px-1.5 bg-gray-100 text-gray-600 rounded">${res}</span>
-        </div>
-        ${it.direct_prompt ? `<div class="font-mono text-gray-700 break-words"><span class="text-gray-400">D:</span> ${escHtml(it.direct_prompt)}</div>` : ''}
-        ${it.nl_prompt ? `<div class="text-gray-700 break-words"><span class="text-gray-400">N:</span> ${escHtml(it.nl_prompt)}</div>` : ''}
-        ${it.final_prompt ? `<div class="mt-1 font-mono text-emerald-800 bg-emerald-50 border border-emerald-100 rounded p-1 break-words"><span class="text-emerald-600">最终:</span> ${escHtml(it.final_prompt)}</div>` : ''}
-        <div class="mt-1 flex gap-2 flex-wrap">
-          <button data-act="apply" data-idx="${realIdx}" class="px-2 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600">填回表单</button>
-          <button data-act="copy-d" data-idx="${realIdx}" class="px-2 py-0.5 bg-gray-200 rounded hover:bg-gray-300">复制 D</button>
-          <button data-act="copy-n" data-idx="${realIdx}" class="px-2 py-0.5 bg-gray-200 rounded hover:bg-gray-300">复制 N</button>
-          ${it.final_prompt ? `<button data-act="copy-final" data-idx="${realIdx}" class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded hover:bg-emerald-200">复制最终</button>` : ''}
-          <button data-act="del" data-idx="${realIdx}" class="px-2 py-0.5 bg-red-100 text-red-700 rounded hover:bg-red-200 sm:ml-auto">删除</button>
+      return `<div class="border rounded p-2 text-xs hover:bg-gray-50 flex gap-2 items-start">
+        ${histPreviewHTML(it)}
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center justify-between gap-2 mb-1">
+            <div class="text-gray-400 whitespace-nowrap">${fmtTime(it.ts)}</div>
+          </div>
+          <div class="flex flex-wrap gap-1 mb-1">
+            ${opts.map(o => `<span class="px-1.5 bg-blue-100 text-blue-700 rounded">${o}</span>`).join('')}
+            <span class="px-1.5 bg-gray-100 text-gray-600 rounded">${res}</span>
+          </div>
+          ${it.direct_prompt ? `<div class="font-mono text-gray-700 break-words"><span class="text-gray-400">D:</span> ${escHtml(it.direct_prompt)}</div>` : ''}
+          ${it.nl_prompt ? `<div class="text-gray-700 break-words"><span class="text-gray-400">N:</span> ${escHtml(it.nl_prompt)}</div>` : ''}
+          ${it.final_prompt ? `<div class="mt-1 font-mono text-emerald-800 bg-emerald-50 border border-emerald-100 rounded p-1 break-words"><span class="text-emerald-600">最终:</span> ${escHtml(it.final_prompt)}</div>` : ''}
+          <div class="mt-1 flex gap-2 flex-wrap">
+            <button data-act="apply" data-idx="${realIdx}" class="px-2 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600">填回表单</button>
+            <button data-act="copy-d" data-idx="${realIdx}" class="px-2 py-0.5 bg-gray-200 rounded hover:bg-gray-300">复制 D</button>
+            <button data-act="copy-n" data-idx="${realIdx}" class="px-2 py-0.5 bg-gray-200 rounded hover:bg-gray-300">复制 N</button>
+            ${it.final_prompt ? `<button data-act="fill-final" data-idx="${realIdx}" class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded hover:bg-emerald-200">填回最终</button>` : ''}
+            <button data-act="del" data-idx="${realIdx}" class="px-2 py-0.5 bg-red-100 text-red-700 rounded hover:bg-red-200 sm:ml-auto">删除</button>
+          </div>
         </div>
       </div>`;
     }).join('');
     return `<section class="border rounded-lg overflow-hidden">
-      <div class="px-3 py-2 bg-slate-50 border-b flex items-center justify-between gap-2">
-        <div class="font-medium text-sm text-slate-700 truncate" title="${escHtml(wf)}">📂 ${escHtml(wf)}</div>
+      <button type="button" data-act="toggle-wf" data-wf="${escHtml(wf)}"
+        class="w-full px-3 py-2 bg-slate-50 border-b flex items-center justify-between gap-2 hover:bg-slate-100 text-left">
+        <div class="font-medium text-sm text-slate-700 truncate" title="${escHtml(wf)}">
+          <span class="inline-block w-4 text-slate-400">${collapsed ? '▸' : '▾'}</span>📂 ${escHtml(wf)}
+        </div>
         <div class="text-xs text-slate-400 shrink-0">${items.length} 条</div>
-      </div>
-      <div class="p-2 space-y-2">${cards}</div>
+      </button>
+      <div class="p-2 space-y-2 ${collapsed ? 'hidden' : ''}">${cards}</div>
     </section>`;
   }).join('');
 }
@@ -423,7 +483,7 @@ function applyHistItem(it) {
   }
   $('direct').value = it.direct_prompt || '';
   $('nl').value = it.nl_prompt || '';
-  $('rewrite').checked = !!it.rewrite;
+  $('llm-mode').value = getHistLlmMode(it) === 'direct' ? 'translate' : getHistLlmMode(it);
   $('override').checked = !!(it.override || it.drop_builtin);
   $('width').value = it.width || '';
   $('height').value = it.height || '';
@@ -433,15 +493,37 @@ function applyHistItem(it) {
 $('hist-list').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-act]');
   if (!btn) return;
+  const act = btn.dataset.act;
+  if (act === 'toggle-wf') {
+    const collapsed = loadHistCollapsed();
+    const expanded = loadHistExpanded();
+    const wf = btn.dataset.wf || '';
+    if (collapsed.has(wf) || !expanded.has(wf)) {
+      collapsed.delete(wf);
+      expanded.add(wf);
+    } else {
+      collapsed.add(wf);
+      expanded.delete(wf);
+    }
+    saveHistCollapsed(collapsed);
+    saveHistExpanded(expanded);
+    renderHist();
+    return;
+  }
   const idx = parseInt(btn.dataset.idx);
   const arr = loadHist();
   const it = arr[idx];
   if (!it) return;
-  const act = btn.dataset.act;
   if (act === 'apply') applyHistItem(it);
   else if (act === 'copy-d') navigator.clipboard.writeText(it.direct_prompt || '');
   else if (act === 'copy-n') navigator.clipboard.writeText(it.nl_prompt || '');
-  else if (act === 'copy-final') navigator.clipboard.writeText(it.final_prompt || '');
+  else if (act === 'fill-final') {
+    $('direct').value = it.final_prompt || '';
+    $('nl').value = '';
+    $('llm-mode').value = 'translate';
+    $('override').checked = true;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
   else if (act === 'del') {
     arr.splice(idx, 1);
     saveHist(arr);
@@ -462,6 +544,47 @@ $('btn-hist-export').addEventListener('click', () => {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
+
+async function migratePromptHistoryImagesOnce() {
+  try {
+    if (localStorage.getItem(HIST_IMAGE_MIGRATION_KEY) === '1') return;
+    const arr = loadHist();
+    const needsImage = arr.filter(it => it.final_prompt && !it.image_path);
+    if (!needsImage.length) {
+      localStorage.setItem(HIST_IMAGE_MIGRATION_KEY, '1');
+      return;
+    }
+
+    const r = await fetch('/api/output/list?limit=500&offset=0');
+    const d = await r.json();
+    const promptToImage = new Map();
+    for (const item of (d.items || [])) {
+      if (!item.path || promptToImage.size >= needsImage.length) break;
+      try {
+        const mr = await fetch('/api/output/meta?path=' + encodeURIComponent(item.path));
+        if (!mr.ok) continue;
+        const meta = await mr.json();
+        const key = normalizePromptForMatch(meta.positive);
+        if (key && !promptToImage.has(key)) promptToImage.set(key, item.path);
+      } catch {}
+    }
+
+    let changed = false;
+    const next = arr.map(it => {
+      if (it.image_path || !it.final_prompt) return it;
+      const imagePath = promptToImage.get(normalizePromptForMatch(it.final_prompt));
+      if (!imagePath) return it;
+      changed = true;
+      return { ...it, image_path: imagePath };
+    });
+    if (changed) saveHist(next);
+    localStorage.setItem(HIST_IMAGE_MIGRATION_KEY, '1');
+    renderHist();
+  } catch (e) {
+    console.warn('历史图片迁移失败', e);
+    try { localStorage.setItem(HIST_IMAGE_MIGRATION_KEY, '1'); } catch {}
+  }
+}
 
 // ============== 输出目录浏览 ==============
 const galleryState = {
@@ -799,13 +922,15 @@ function handleMsg(m) {
     $('result-box').classList.remove('hidden');
     updatePromptHistoryFinalPrompt(activeHistoryTs, m.final_prompt);
   } else if (m.type === 'image') {
+    const relPath = m.subfolder ? `${m.subfolder}/${m.filename}` : m.filename;
     const div = document.createElement('div');
-    div.innerHTML = `<a href="${m.url}" data-gallery="main" data-title="${m.filename}" class="glightbox">
-        <img src="${m.url}" class="w-full rounded border hover:ring-2 hover:ring-blue-400" loading="lazy" />
+    div.innerHTML = `<a href="${m.url}" data-gallery="main" data-title="${m.filename}" class="glightbox block rounded border overflow-hidden">
+        <img src="${m.url}" class="w-full hover:ring-2 hover:ring-blue-400" loading="lazy" />
       </a>
       <div class="text-xs text-gray-500 break-all">${m.filename}</div>`;
     $('images').appendChild(div);
     refreshLightbox();
+    updatePromptHistoryImage(activeHistoryTs, relPath);
     pushHistory({
       url: m.url,
       filename: m.filename,
@@ -1111,6 +1236,7 @@ loadCurrent();
 loadList();
 loadGallery(true);
 renderHist();
+migratePromptHistoryImagesOnce();
 </script>
 </body>
 </html>
