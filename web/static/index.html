@@ -581,15 +581,22 @@ function startRun() {
   }
   const direct = $('direct').value.trim();
   const nl = $('nl').value.trim();
+  const rewrite = $('rewrite').checked;
+  const translate = $('translate').checked;
+  const useLlm = rewrite || translate;
+  if (!useLlm && !direct) {
+    alert('未启用改写/翻译时，请先填写直接 Tag。自然语言描述不会参与生成。');
+    return;
+  }
   if (!direct && !nl) {
     if (!confirm('未输入任何 prompt，使用工作流内置 prompt？')) return;
   }
   const payload = {
     workflow_path: getCurrentPath(),
     direct_prompt: direct,
-    nl_prompt: nl,
-    rewrite: $('rewrite').checked,
-    translate: $('translate').checked,
+    nl_prompt: useLlm ? nl : '',
+    rewrite,
+    translate,
     drop_builtin: $('drop_builtin').checked,
     width: parseInt($('width').value) || null,
     height: parseInt($('height').value) || null,

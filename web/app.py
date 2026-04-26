@@ -814,6 +814,12 @@ async def _run_task(ws: WebSocket, req: RunRequest):
                 return
             sd_prompt = sep.join(base_parts + [translated]) if translated else base
         await emit(ws, {"type": "llm_done", "text": translated})
+    elif not req.rewrite and not req.translate:
+        sd_prompt = req.direct_prompt.strip()
+        await emit(ws, {"type": "log", "message": "[2/4] 跳过 LLM，使用直接 Tag"})
+        if not sd_prompt:
+            await emit(ws, {"type": "error", "message": "未启用改写/翻译时，请填写直接 Tag"})
+            return
     else:
         sd_prompt = base
         await emit(ws, {"type": "log", "message": "[2/4] 跳过 LLM"})

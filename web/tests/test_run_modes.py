@@ -33,7 +33,7 @@ class RunModeTests(unittest.IsolatedAsyncioTestCase):
         app._broadcast = self.orig_broadcast
         app._active_cancel_event = self.orig_active_cancel_event
 
-    async def _run_case(self, req, translated_text="translated tags"):
+    async def _run_case(self, req, translated_text="translated tags", builtin_text="builtin tags"):
         translate_calls = []
         submitted_prompts = []
 
@@ -42,7 +42,7 @@ class RunModeTests(unittest.IsolatedAsyncioTestCase):
 
         def fake_workflow_to_prompt_api(data):
             prompt_dict = {
-                "1": {"inputs": {"text": "builtin tags"}, "class_type": "CLIPTextEncode"},
+                "1": {"inputs": {"text": builtin_text}, "class_type": "CLIPTextEncode"},
                 "2": {"inputs": {"seed": 1}, "class_type": "KSampler"},
             }
             return prompt_dict, ("1", "text")
@@ -117,7 +117,7 @@ class RunModeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(submitted_prompts[0]["1"]["inputs"]["text"], "builtin tags, direct tags, translated")
         self.assertTrue(any(m.get("type") == "prompt_id" and m.get("final_prompt") == "builtin tags, direct tags, translated" for m in ws.messages))
 
-    async def test_disabling_both_modes_skips_llm_even_if_nl_prompt_exists(self):
+    async def test_disabling_both_modes_skips_llm_and_uses_direct_prompt_only(self):
         req = app.RunRequest(
             workflow_path="wf.json",
             direct_prompt="direct tags",
@@ -129,8 +129,26 @@ class RunModeTests(unittest.IsolatedAsyncioTestCase):
         ws, translate_calls, submitted_prompts = await self._run_case(req)
 
         self.assertEqual(translate_calls, [])
-        self.assertEqual(submitted_prompts[0]["1"]["inputs"]["text"], "builtin tags, direct tags")
+        self.assertEqual(submitted_prompts[0]["1"]["inputs"]["text"], "direct tags")
         self.assertTrue(any(m.get("type") == "log" and "跳过 LLM" in m.get("message", "") for m in ws.messages))
+
+    async def test_disabling_both_modes_requires_direct_prompt(self):
+        req = app.RunRequest(
+            workflow_path="wf.json",
+            direct_prompt="",
+            nl_prompt="这段应该被忽略",
+            rewrite=False,
+            translate=False,
+        )
+
+        ws, translate_calls, submitted_prompts = await self._run_case(req, builtin_text="")
+
+        self.assertEqual(translate_calls, [])
+        self.assertEqual(submitted_prompts, [])
+        self.assertTrue(any(
+            m.get("type") == "error" and "直接 Tag" in m.get("message", "")
+            for m in ws.messages
+        ))
 
 
 if __name__ == "__main__":
