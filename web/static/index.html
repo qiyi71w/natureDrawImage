@@ -420,7 +420,7 @@ function handleMsg(m) {
 }
 
 function finishRun() {
-  $('btn-run').disabled = !!globalBusy;
+  $('btn-run').disabled = false;
   $('btn-cancel').classList.add('hidden');
   activeWS = null;
 }
