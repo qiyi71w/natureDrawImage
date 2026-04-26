@@ -480,6 +480,63 @@ async def api_output_file(path: str):
     return FileResponse(str(p), media_type=media)
 
 
+def _extract_positive_from_prompt_json(prompt_json: Dict[str, Any]) -> str:
+    """从 ComfyUI prompt API JSON 中追正向 CLIPTextEncode 文本。"""
+    if not isinstance(prompt_json, dict):
+        return ""
+    sampler_types = {"KSampler", "KSamplerAdvanced", "SamplerCustom", "SamplerCustomAdvanced"}
+    for _, ndata in prompt_json.items():
+        if not isinstance(ndata, dict):
+            continue
+        if ndata.get("class_type") in sampler_types:
+            pos = (ndata.get("inputs") or {}).get("positive")
+            if isinstance(pos, list) and len(pos) >= 1:
+                src = prompt_json.get(str(pos[0]))
+                if isinstance(src, dict) and src.get("class_type") in ("CLIPTextEncode", "CLIPTextEncodeSDXL"):
+                    text = (src.get("inputs") or {}).get("text", "")
+                    if isinstance(text, str) and text.strip():
+                        return text.strip()
+    for _, ndata in prompt_json.items():
+        if not isinstance(ndata, dict):
+            continue
+        if ndata.get("class_type") == "CLIPTextEncode":
+            title = ((ndata.get("_meta") or {}).get("title") or "").lower()
+            if "positive" in title or "[pos]" in title or "[prompt]" in title:
+                text = (ndata.get("inputs") or {}).get("text", "")
+                if isinstance(text, str) and text.strip():
+                    return text.strip()
+    return ""
+
+
+@app.get("/api/output/meta")
+async def api_output_meta(path: str):
+    """读取图片元数据，返回可识别的正向 prompt。"""
+    p = _resolve_output_path(path)
+    if not p.is_file():
+        raise HTTPException(404, "not found")
+    if p.suffix.lower() != ".png":
+        return {"path": path, "positive": "", "supported": False}
+    try:
+        from PIL import Image
+        with Image.open(p) as im:
+            info = dict(im.info or {})
+    except Exception as e:
+        return {"path": path, "positive": "", "error": str(e), "supported": True}
+
+    positive = ""
+    raw_prompt = info.get("prompt")
+    if isinstance(raw_prompt, str):
+        try:
+            positive = _extract_positive_from_prompt_json(json.loads(raw_prompt))
+        except Exception:
+            pass
+    if not positive:
+        params = info.get("parameters")
+        if isinstance(params, str) and params.strip():
+            positive = params.split("Negative prompt:", 1)[0].split("Steps:", 1)[0].strip()
+    return {"path": path, "positive": positive, "supported": True}
+
+
 @app.post("/api/workflows/select")
 async def api_select(payload: Dict[str, str]):
     """已废弃：选择由前端 localStorage 维护。
