@@ -55,6 +55,10 @@
   <div class="bg-white rounded shadow p-4 mb-4">
     <h2 class="text-lg font-semibold mb-3">🎨 生成图片</h2>
 
+    <label class="block text-sm font-medium mb-1">工作流内置 prompt (B) <span class="text-xs text-gray-400 font-normal">只读 · 来自工作流 JSON</span></label>
+    <textarea id="builtin" rows="5" readonly placeholder="（当前工作流未内置 prompt）"
+      class="w-full border rounded px-2 py-1 mb-3 text-xs font-mono bg-gray-50 text-gray-600 leading-relaxed"></textarea>
+
     <label class="block text-sm font-medium mb-1">直接 Tag (-d)</label>
     <textarea id="direct" rows="2" placeholder="可选：直接英文 tags（逗号分隔）"
       class="w-full border rounded px-2 py-1 mb-3 text-sm font-mono"></textarea>
@@ -65,11 +69,62 @@
 
     <div class="flex gap-4 mb-1 text-sm">
       <label class="flex items-center gap-1"><input type="checkbox" id="rewrite" checked /> 改写模式 (-r)</label>
+      <label class="flex items-center gap-1"><input type="checkbox" id="drop_builtin" /> 丢弃内置 B</label>
     </div>
-    <p class="text-xs text-gray-500 mb-3">
-      改写模式：让 LLM 基于「直接 Tag」（或工作流内置 prompt）作为底本，结合「自然语言描述」整体重写一段新的 prompt，会智能修改、删除、补充原有标签。<br>
-      未勾选时为普通翻译/追加：把自然语言翻译成 tag 后，直接拼接到底本之后，原内容保持不变。
-    </p>
+    <details class="text-xs text-gray-600 mb-3 bg-gray-50 border border-gray-200 rounded p-2">
+      <summary class="cursor-pointer select-none font-medium text-gray-700">
+        📖 N / R / D / B 如何组合成最终 prompt（点开看清单）
+      </summary>
+      <div class="mt-2 space-y-3">
+        <div class="bg-white border rounded p-2">
+          <div class="font-semibold text-gray-700 mb-1">四个变量</div>
+          <ul class="space-y-1">
+            <li><b class="text-blue-700">N</b> = 自然语言框（-t）。<u>是否调 LLM 完全看 N 有没有填</u>。</li>
+            <li><b class="text-blue-700">R</b> = 改写模式（-r）。仅在 N 非空时生效。</li>
+            <li><b class="text-blue-700">D</b> = 直接 Tag 框（-d），手写英文 tag。</li>
+            <li><b class="text-blue-700">B</b> = 工作流内置 prompt，上面那个只读框。</li>
+          </ul>
+          <div class="mt-2 text-gray-500">
+            统一记号：<code>底本 = B , D</code>（按顺序拼接，空的跳过）<br>
+            勾选「丢弃内置 B」后：<code>底本 = D</code>，B 不参与任何分支。
+          </div>
+        </div>
+
+        <div class="bg-white border rounded p-2">
+          <div class="font-semibold text-gray-700 mb-1">三种情况</div>
+          <table class="w-full border-collapse text-[11px]">
+            <thead class="bg-gray-100">
+              <tr>
+                <th class="border px-1 py-1 text-left">条件</th>
+                <th class="border px-1 py-1 text-left">LLM 做什么</th>
+                <th class="border px-1 py-1 text-left">最终 prompt</th>
+              </tr>
+            </thead>
+            <tbody class="align-top">
+              <tr>
+                <td class="border px-1 py-1">N 空</td>
+                <td class="border px-1 py-1 text-gray-500">不调用</td>
+                <td class="border px-1 py-1"><code>底本</code></td>
+              </tr>
+              <tr>
+                <td class="border px-1 py-1">N 有 + R 关</td>
+                <td class="border px-1 py-1">把 N 翻成英文 tag</td>
+                <td class="border px-1 py-1"><code>底本 , 翻译(N)</code></td>
+              </tr>
+              <tr class="bg-blue-50">
+                <td class="border px-1 py-1">N 有 + R 开</td>
+                <td class="border px-1 py-1">把<b>底本</b>当原始 prompt，按 N 整体重写<br><span class="text-gray-500">底本为空时降级为翻译</span></td>
+                <td class="border px-1 py-1"><code>改写输出</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="bg-white border rounded p-2 text-gray-600">
+          只有未勾选「丢弃内置 B」时，B 才会参与。改写模式下 LLM 会智能修改/删除/补充底本，最终只输出重写后的内容。
+        </div>
+      </div>
+    </details>
 
     <div class="flex gap-2 items-end mb-2 text-sm">
       <div>
@@ -85,6 +140,12 @@
       <button id="btn-reset-res" type="button"
         class="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-xs">恢复默认</button>
       <span id="default-res" class="text-xs text-gray-500"></span>
+      <div class="ml-auto flex items-center gap-1">
+        <label for="batch" class="block text-xs text-gray-500">批量</label>
+        <input id="batch" type="number" min="1" max="50" value="1"
+          class="w-16 border rounded px-2 py-1" />
+        <span class="text-xs text-gray-400">张</span>
+      </div>
     </div>
     <div class="flex flex-wrap gap-2 mb-3 text-xs" id="res-presets">
       <button type="button" data-w="832" data-h="1216"
@@ -134,6 +195,22 @@
     <div id="images" class="grid grid-cols-1 md:grid-cols-2 gap-2"></div>
   </div>
 
+  <!-- 提示词历史（本地） -->
+  <div class="bg-white rounded shadow p-4 mb-4">
+    <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+      <h2 class="text-lg font-semibold">🕘 提示词历史
+        <span class="text-xs text-gray-500 font-normal">(<span id="hist-count">0</span>) · 仅存在本地浏览器</span>
+      </h2>
+      <div class="flex gap-2">
+        <input id="hist-search" type="text" placeholder="搜索 prompt / 工作流..."
+          class="border rounded px-2 py-1 text-xs" />
+        <button id="btn-hist-export" class="text-xs px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">导出 JSON</button>
+        <button id="btn-hist-clear" class="text-xs px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200">清空</button>
+      </div>
+    </div>
+    <div id="hist-list" class="space-y-2 max-h-96 overflow-y-auto"></div>
+  </div>
+
   <!-- 全部输出图片 -->
   <div class="bg-white rounded shadow p-4 mb-4">
     <div class="flex items-center justify-between mb-2">
@@ -169,6 +246,127 @@ function pushHistory(item) {
     prependGalleryItem(item.filename);
   }
 }
+
+// ============== 提示词历史（localStorage） ==============
+const HIST_KEY = 'promptHistoryV1';
+const HIST_MAX = 200;
+
+function loadHist() {
+  try { return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); }
+  catch { return []; }
+}
+function saveHist(arr) {
+  try { localStorage.setItem(HIST_KEY, JSON.stringify(arr.slice(0, HIST_MAX))); }
+  catch (e) { console.warn('保存历史失败', e); }
+}
+function pushPromptHistory(payload) {
+  const arr = loadHist();
+  const item = { ...payload, ts: Date.now() };
+  // 去重：连续两次完全一样就不再加
+  const last = arr[0];
+  if (last) {
+    const sameKeys = ['workflow_path','direct_prompt','nl_prompt','rewrite','drop_builtin','width','height','batch'];
+    const same = sameKeys.every(k => (last[k] ?? null) === (item[k] ?? null));
+    if (same) { return; }
+  }
+  arr.unshift(item);
+  saveHist(arr);
+  renderHist();
+}
+function escHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+function fmtTime(ts) {
+  const d = new Date(ts);
+  const p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function renderHist() {
+  const all = loadHist();
+  $('hist-count').textContent = all.length;
+  const q = ($('hist-search').value || '').toLowerCase().trim();
+  const filtered = q
+    ? all.filter(it => [it.workflow_path, it.direct_prompt, it.nl_prompt]
+        .some(s => (s||'').toLowerCase().includes(q)))
+    : all;
+  if (!filtered.length) {
+    $('hist-list').innerHTML = '<div class="text-xs text-gray-400 p-2">暂无历史</div>';
+    return;
+  }
+  $('hist-list').innerHTML = filtered.map((it, idx) => {
+    const realIdx = all.indexOf(it);
+    const wf = (it.workflow_path || '').replace(/\.json$/i, '') || '(无工作流)';
+    const opts = [];
+    if (it.rewrite) opts.push('改写');
+    if (it.drop_builtin) opts.push('丢弃B');
+    if ((it.batch||1) > 1) opts.push(`批量×${it.batch}`);
+    const res = (it.width && it.height) ? `${it.width}×${it.height}` : '默认尺寸';
+    return `<div class="border rounded p-2 text-xs hover:bg-gray-50">
+      <div class="flex items-center justify-between gap-2 mb-1">
+        <div class="font-medium text-gray-700 truncate" title="${escHtml(wf)}">📂 ${escHtml(wf)}</div>
+        <div class="text-gray-400 whitespace-nowrap">${fmtTime(it.ts)}</div>
+      </div>
+      <div class="flex flex-wrap gap-1 mb-1">
+        ${opts.map(o => `<span class="px-1.5 bg-blue-100 text-blue-700 rounded">${o}</span>`).join('')}
+        <span class="px-1.5 bg-gray-100 text-gray-600 rounded">${res}</span>
+      </div>
+      ${it.direct_prompt ? `<div class="font-mono text-gray-700 break-words"><span class="text-gray-400">D:</span> ${escHtml(it.direct_prompt)}</div>` : ''}
+      ${it.nl_prompt ? `<div class="text-gray-700 break-words"><span class="text-gray-400">N:</span> ${escHtml(it.nl_prompt)}</div>` : ''}
+      <div class="mt-1 flex gap-2">
+        <button data-act="apply" data-idx="${realIdx}" class="px-2 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600">填回表单</button>
+        <button data-act="copy-d" data-idx="${realIdx}" class="px-2 py-0.5 bg-gray-200 rounded hover:bg-gray-300">复制 D</button>
+        <button data-act="copy-n" data-idx="${realIdx}" class="px-2 py-0.5 bg-gray-200 rounded hover:bg-gray-300">复制 N</button>
+        <button data-act="del" data-idx="${realIdx}" class="px-2 py-0.5 bg-red-100 text-red-700 rounded hover:bg-red-200 ml-auto">删除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function applyHistItem(it) {
+  if (it.workflow_path && it.workflow_path !== getCurrentPath()) {
+    selectWorkflow(it.workflow_path);
+  }
+  $('direct').value = it.direct_prompt || '';
+  $('nl').value = it.nl_prompt || '';
+  $('rewrite').checked = !!it.rewrite;
+  $('drop_builtin').checked = !!it.drop_builtin;
+  $('width').value = it.width || '';
+  $('height').value = it.height || '';
+  $('batch').value = it.batch || 1;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+$('hist-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const idx = parseInt(btn.dataset.idx);
+  const arr = loadHist();
+  const it = arr[idx];
+  if (!it) return;
+  const act = btn.dataset.act;
+  if (act === 'apply') applyHistItem(it);
+  else if (act === 'copy-d') navigator.clipboard.writeText(it.direct_prompt || '');
+  else if (act === 'copy-n') navigator.clipboard.writeText(it.nl_prompt || '');
+  else if (act === 'del') {
+    arr.splice(idx, 1);
+    saveHist(arr);
+    renderHist();
+  }
+});
+$('hist-search').addEventListener('input', renderHist);
+$('btn-hist-clear').addEventListener('click', () => {
+  if (!confirm('清空所有提示词历史？')) return;
+  saveHist([]);
+  renderHist();
+});
+$('btn-hist-export').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(loadHist(), null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `prompt-history-${Date.now()}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
 
 // ============== 输出目录浏览 ==============
 const galleryState = {
@@ -257,6 +455,7 @@ async function loadCurrent() {
 
   defaultRes.w = d.default_width;
   defaultRes.h = d.default_height;
+  $('builtin').value = d.builtin_prompt || '';
   if (defaultRes.w && defaultRes.h) {
     $('default-res').textContent = `默认 ${defaultRes.w}×${defaultRes.h}（留空即使用默认）`;
     $('width').placeholder = defaultRes.w;
@@ -346,9 +545,13 @@ function startRun() {
     direct_prompt: direct,
     nl_prompt: nl,
     rewrite: $('rewrite').checked,
+    drop_builtin: $('drop_builtin').checked,
     width: parseInt($('width').value) || null,
     height: parseInt($('height').value) || null,
+    batch: Math.max(1, Math.min(50, parseInt($('batch').value) || 1)),
   };
+
+  pushPromptHistory(payload);
 
   $('progress-box').classList.remove('hidden');
   $('result-box').classList.add('hidden');
@@ -413,9 +616,11 @@ function handleMsg(m) {
     appendLog(`✅ 完成，共 ${m.count} 张`);
     $('progress-text').textContent = '完成';
     if (m.final_prompt) $('final-prompt').textContent = m.final_prompt;
+    finishRun();
   } else if (m.type === 'error') {
     appendLog('❌ ' + m.message);
     $('progress-text').textContent = '失败: ' + m.message;
+    finishRun();
   }
 }
 
@@ -423,6 +628,8 @@ function finishRun() {
   $('btn-run').disabled = false;
   $('btn-cancel').classList.add('hidden');
   activeWS = null;
+  globalBusy = false;
+  mirroring = false;
 }
 
 async function cancelRun() {
@@ -456,10 +663,9 @@ function applyGlobalStatus(s) {
   const box = $('global-status');
   if (!s.busy) {
     box.classList.add('hidden');
-    if (!activeWS) {
-      $('btn-run').disabled = false;
-    }
-    // 任务结束：清理"镜像中"标记
+    $('btn-run').disabled = false;
+    $('btn-cancel').classList.add('hidden');
+    activeWS = null;
     mirroring = false;
     return;
   }
@@ -565,6 +771,7 @@ function refreshLightbox() {
 loadCurrent();
 loadList();
 loadGallery(true);
+renderHist();
 </script>
 </body>
 </html>

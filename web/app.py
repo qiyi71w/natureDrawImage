@@ -6,7 +6,7 @@ ComfyUI 网页版控制台
 
 # ========== IP / 端口配置 ==========
 COMFYUI_HOST = "127.0.0.1"
-COMFYUI_PORT = 8000
+COMFYUI_PORT = 8188
 LMS_HOST = "127.0.0.1"
 LMS_PORT = 1234
 
@@ -14,7 +14,7 @@ WEB_HOST = "127.0.0.1"
 WEB_PORT = 8080
 
 # ComfyUI 输出目录（只读浏览）
-OUTPUT_DIR_STR = r"C:\Users\acofo\Documents\ComfyUI\output"
+OUTPUT_DIR_STR = r"D:\BaiduNetdiskDownload\ComfyUI-aki\ComfyUI-aki-v3\ComfyUI\output"
 # ===================================
 
 import asyncio
@@ -531,6 +531,13 @@ def apply_resolution(prompt_dict: Dict[str, Any], width: int, height: int) -> in
     return n
 
 
+def build_prompt_base(builtin: str, direct_prompt: str, drop_builtin: bool, sep: str = ", ") -> Tuple[List[str], str]:
+    builtin_part = "" if drop_builtin else builtin.strip()
+    direct_part = direct_prompt.strip()
+    base_parts = [part for part in (builtin_part, direct_part) if part]
+    return base_parts, sep.join(base_parts)
+
+
 @app.get("/api/workflows/current")
 async def api_current(path: Optional[str] = None):
     """返回指定工作流的摘要 + 默认分辨率。前端传 path（来自浏览器 localStorage）。
@@ -543,14 +550,21 @@ async def api_current(path: Optional[str] = None):
         data = await get_workflow(path)
     except Exception as e:
         return {"path": path, "error": str(e), "thumbnail": has_thumb}
-    pd, _ = workflow_to_prompt_api(data)
+    pd, positive_ref = workflow_to_prompt_api(data)
     res = detect_default_resolution(pd)
+    builtin_prompt = ""
+    if positive_ref:
+        nid, iname = positive_ref
+        v = pd.get(nid, {}).get("inputs", {}).get(iname, "")
+        if isinstance(v, str):
+            builtin_prompt = v.strip()
     return {
         "path": path,
         "summary": summarize_workflow(data),
         "thumbnail": has_thumb,
         "default_width": res[0] if res else None,
         "default_height": res[1] if res else None,
+        "builtin_prompt": builtin_prompt,
     }
 
 
@@ -592,8 +606,10 @@ class RunRequest(BaseModel):
     direct_prompt: str = ""
     nl_prompt: str = ""
     rewrite: bool = False
+    drop_builtin: bool = False
     width: Optional[int] = None
     height: Optional[int] = None
+    batch: int = 1
 
 
 # 单一并发锁
@@ -709,6 +725,7 @@ async def ws_run(ws: WebSocket):
 
 async def _run_task(ws: WebSocket, req: RunRequest):
     import time as _time
+
     path = req.workflow_path
     if not path:
         await emit(ws, {"type": "error", "message": "未指定工作流（前端未传 workflow_path）"})
@@ -734,6 +751,7 @@ async def _run_task(ws: WebSocket, req: RunRequest):
     builtin = builtin.strip()
 
     sep = ", "
+    base_parts, base = build_prompt_base(builtin, req.direct_prompt, req.drop_builtin, sep=sep)
 
     if req.nl_prompt:
         await emit(ws, {"type": "log", "message": f"[2/4] LLM {'改写' if req.rewrite else '翻译'}中..."})
@@ -743,22 +761,22 @@ async def _run_task(ws: WebSocket, req: RunRequest):
         async def _on_chunk(piece: str):
             await emit(ws, {"type": "llm_chunk", "delta": piece})
 
-        base = req.direct_prompt or builtin
         if req.rewrite and base:
             translated = await translate_prompt(
-                req.nl_prompt, original_prompt=base, on_chunk=_on_chunk,
+                req.nl_prompt,
+                original_prompt=base,
+                on_chunk=_on_chunk,
             )
             sd_prompt = translated
         else:
             translated = await translate_prompt(
-                req.nl_prompt, on_chunk=_on_chunk,
+                req.nl_prompt,
+                on_chunk=_on_chunk,
             )
-            parts = [p for p in (builtin, req.direct_prompt, translated) if p]
-            sd_prompt = sep.join(parts)
+            sd_prompt = sep.join(base_parts + [translated]) if translated else base
         await emit(ws, {"type": "llm_done", "text": translated})
     else:
-        parts = [p for p in (builtin, req.direct_prompt) if p]
-        sd_prompt = sep.join(parts)
+        sd_prompt = base
         await emit(ws, {"type": "log", "message": "[2/4] 跳过 LLM"})
 
     if not sd_prompt.strip():
@@ -772,49 +790,62 @@ async def _run_task(ws: WebSocket, req: RunRequest):
         if n:
             await emit(ws, {"type": "log", "message": f"分辨率覆盖为 {req.width}x{req.height} ({n} 个节点)"})
 
-    for nid, ndata in prompt_dict.items():
-        if ndata.get("class_type") == "KSampler":
-            inp = ndata.get("inputs", {})
-            if "seed" in inp:
-                inp["seed"] = random.randint(0, 2**63 - 1)
+    batch = max(1, int(req.batch or 1))
+    total_images = 0
+    for round_idx in range(batch):
+        for nid, ndata in prompt_dict.items():
+            if ndata.get("class_type") == "KSampler":
+                inp = ndata.get("inputs", {})
+                if "seed" in inp:
+                    inp["seed"] = random.randint(0, 2**63 - 1)
 
-    await emit(ws, {"type": "log", "message": "[3/4] 提交到 ComfyUI..."})
-    prompt_id = await submit_prompt(prompt_dict)
-    await emit(ws, {"type": "log", "message": f"prompt_id={prompt_id[:8]}"})
-    await emit(ws, {"type": "prompt_id", "prompt_id": prompt_id, "final_prompt": sd_prompt})
-    await _push_status({
-        "stage": "generating",
-        "prompt_id": prompt_id,
-        "final_prompt": sd_prompt[:200],
-    })
-
-    await emit(ws, {"type": "log", "message": "[4/4] 等待生成..."})
-    history = await _wait_for(prompt_id, ws, prompt_dict)
-
-    images = []
-    for _, node_output in (history.get("outputs") or {}).items():
-        for img in node_output.get("images", []) or []:
-            images.append({
-                "filename": img.get("filename", ""),
-                "subfolder": img.get("subfolder", ""),
-                "type": img.get("type", "output"),
-            })
-
-    if not images:
-        await emit(ws, {"type": "error", "message": "无图片输出"})
-        return
-
-    for img in images:
-        url = f"/api/image?filename={img['filename']}&subfolder={img['subfolder']}&type={img['type']}"
+        round_label = f" ({round_idx + 1}/{batch})" if batch > 1 else ""
+        await emit(ws, {"type": "log", "message": f"[3/4]{round_label} 提交到 ComfyUI..."})
+        prompt_id = await submit_prompt(prompt_dict)
+        await emit(ws, {"type": "log", "message": f"prompt_id={prompt_id[:8]}"})
         await emit(ws, {
-            "type": "image",
-            "url": url,
-            "filename": img["filename"],
-            "subfolder": img["subfolder"],
-            "image_type": img["type"],
+            "type": "prompt_id",
+            "prompt_id": prompt_id,
+            "final_prompt": sd_prompt,
+            "round": round_idx + 1,
+            "batch": batch,
+        })
+        await _push_status({
+            "stage": "generating",
+            "prompt_id": prompt_id,
+            "final_prompt": sd_prompt[:200],
+            "round": round_idx + 1,
+            "batch": batch,
         })
 
-    await emit(ws, {"type": "done", "final_prompt": sd_prompt, "count": len(images)})
+        await emit(ws, {"type": "log", "message": f"[4/4]{round_label} 等待生成..."})
+        history = await _wait_for(prompt_id, ws, prompt_dict)
+
+        images = []
+        for _, node_output in (history.get("outputs") or {}).items():
+            for img in node_output.get("images", []) or []:
+                images.append({
+                    "filename": img.get("filename", ""),
+                    "subfolder": img.get("subfolder", ""),
+                    "type": img.get("type", "output"),
+                })
+
+        if not images:
+            await emit(ws, {"type": "error", "message": f"第 {round_idx + 1} 轮无图片输出"})
+            return
+
+        for img in images:
+            url = f"/api/image?filename={img['filename']}&subfolder={img['subfolder']}&type={img['type']}"
+            await emit(ws, {
+                "type": "image",
+                "url": url,
+                "filename": img["filename"],
+                "subfolder": img["subfolder"],
+                "image_type": img["type"],
+            })
+        total_images += len(images)
+
+    await emit(ws, {"type": "done", "final_prompt": sd_prompt, "count": total_images, "batch": batch})
 
 
 async def _wait_for(prompt_id: str, ws: WebSocket, prompt_dict: Dict[str, Any], timeout: int = 600) -> Dict[str, Any]:
