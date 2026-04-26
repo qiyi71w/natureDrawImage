@@ -163,13 +163,20 @@
     <textarea id="nl" rows="3" placeholder="可选：中文/英文自然语言，会经过 LLM 处理"
       class="w-full border rounded px-2 py-1 mb-3 text-sm"></textarea>
 
-    <div class="flex gap-4 mb-1 text-sm">
-      <label class="flex items-center gap-1"><input type="checkbox" id="rewrite" checked /> 改写模式 (-r)</label>
+    <div class="flex gap-4 mb-1 text-sm flex-wrap items-center">
+      <label class="flex items-center gap-1">
+        <span>LLM 处理</span>
+        <select id="llm-mode" class="border rounded px-2 py-1 text-xs">
+          <option value="rewrite" selected>改写</option>
+          <option value="translate">翻译追加</option>
+          <option value="expand">联想</option>
+        </select>
+      </label>
       <label class="flex items-center gap-1"><input type="checkbox" id="override" /> 覆写模式</label>
     </div>
     <p class="text-xs text-gray-500 mb-3">
-      改写模式：让 LLM 基于「直接 Tag」（或工作流内置 prompt）作为底本，结合「自然语言描述」整体重写一段新的 prompt，会智能修改、删除、补充原有标签。<br>
-      未勾选时为普通翻译/追加：把自然语言翻译成 tag 后，直接拼接到底本之后，原内容保持不变。<br>
+      改写：让 LLM 基于「直接 Tag」（或工作流内置 prompt）作为底本，结合「自然语言描述」整体重写。<br>
+      翻译追加：把自然语言翻译成 tag 后拼接到底本之后。联想：按自然语言方向扩展相关 tag 后拼接到底本之后。<br>
       <span class="text-orange-600">覆写模式：完全忽略工作流内置 prompt，最终只用你的输入（直接 Tag + LLM 输出）。</span>
     </p>
 
@@ -325,7 +332,7 @@ function pushPromptHistory(payload) {
   // 去重：连续两次完全一样就不再加
   const last = arr[0];
   if (last) {
-    const sameKeys = ['workflow_path','direct_prompt','nl_prompt','rewrite','override','width','height','batch'];
+    const sameKeys = ['workflow_path','direct_prompt','nl_prompt','llm_mode','override','width','height','batch'];
     const same = sameKeys.every(k => (last[k] ?? null) === (item[k] ?? null));
     if (same) { return last.ts; }
   }
@@ -726,7 +733,7 @@ function startRun() {
   }
   const direct = $('direct').value.trim();
   const nl = $('nl').value.trim();
-  const rewrite = $('rewrite').checked;
+  const llmMode = $('llm-mode').value || 'translate';
   if (!direct && !nl) {
     if (!confirm('未输入任何 prompt，使用工作流内置 prompt？')) return;
   }
@@ -735,7 +742,8 @@ function startRun() {
     inline_workflow: forkedWorkflow || null,
     direct_prompt: direct,
     nl_prompt: nl,
-    rewrite,
+    rewrite: llmMode === 'rewrite',
+    llm_mode: llmMode,
     override: $('override').checked,
     width: parseInt($('width').value) || null,
     height: parseInt($('height').value) || null,

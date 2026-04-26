@@ -47,10 +47,11 @@ class RunModeTests(unittest.IsolatedAsyncioTestCase):
             }
             return prompt_dict, ("1", "text")
 
-        async def fake_translate_prompt(prompt, original_prompt=None, on_chunk=None, cancel_event=None):
+        async def fake_translate_prompt(prompt, original_prompt=None, mode="translate", on_chunk=None, cancel_event=None):
             translate_calls.append({
                 "prompt": prompt,
                 "original_prompt": original_prompt,
+                "mode": mode,
                 "has_on_chunk": on_chunk is not None,
                 "cancel_event": cancel_event,
             })
@@ -97,6 +98,7 @@ class RunModeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(translate_calls), 1)
         self.assertEqual(translate_calls[0]["original_prompt"], "direct tags")
+        self.assertEqual(translate_calls[0]["mode"], "translate")
         self.assertEqual(submitted_prompts[0]["1"]["inputs"]["text"], "rewritten")
         self.assertTrue(any(m.get("type") == "prompt_id" and m.get("final_prompt") == "rewritten" for m in ws.messages))
 
@@ -112,6 +114,7 @@ class RunModeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(translate_calls), 1)
         self.assertEqual(translate_calls[0]["original_prompt"], "builtin tags")
+        self.assertEqual(translate_calls[0]["mode"], "translate")
         self.assertEqual(submitted_prompts[0]["1"]["inputs"]["text"], "rewritten")
         self.assertTrue(any(m.get("type") == "prompt_id" and m.get("final_prompt") == "rewritten" for m in ws.messages))
 
@@ -127,8 +130,25 @@ class RunModeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(translate_calls), 1)
         self.assertIsNone(translate_calls[0]["original_prompt"])
+        self.assertEqual(translate_calls[0]["mode"], "translate")
         self.assertEqual(submitted_prompts[0]["1"]["inputs"]["text"], "builtin tags, direct tags, translated")
         self.assertTrue(any(m.get("type") == "prompt_id" and m.get("final_prompt") == "builtin tags, direct tags, translated" for m in ws.messages))
+
+    async def test_expand_mode_appends_expanded_text_to_base(self):
+        req = app.RunRequest(
+            workflow_path="wf.json",
+            direct_prompt="direct tags",
+            nl_prompt="海边夏天",
+            llm_mode="expand",
+        )
+
+        ws, translate_calls, submitted_prompts = await self._run_case(req, translated_text="expanded tags")
+
+        self.assertEqual(len(translate_calls), 1)
+        self.assertIsNone(translate_calls[0]["original_prompt"])
+        self.assertEqual(translate_calls[0]["mode"], "expand")
+        self.assertEqual(submitted_prompts[0]["1"]["inputs"]["text"], "builtin tags, direct tags, expanded tags")
+        self.assertTrue(any(m.get("type") == "log" and "LLM 联想中" in m.get("message", "") for m in ws.messages))
 
     async def test_empty_nl_prompt_skips_llm_and_uses_base(self):
         req = app.RunRequest(

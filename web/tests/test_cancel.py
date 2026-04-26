@@ -47,7 +47,7 @@ class CancelDuringLlmTests(unittest.IsolatedAsyncioTestCase):
         def fake_workflow_to_prompt_api(data):
             return ({"1": {"inputs": {"text": "base"}, "class_type": "CLIPTextEncode"}}, ("1", "text"))
 
-        async def fake_translate_prompt(prompt, original_prompt=None, on_chunk=None, cancel_event=None):
+        async def fake_translate_prompt(prompt, original_prompt=None, mode="translate", on_chunk=None, cancel_event=None):
             translate_started.set()
             await allow_translate_return.wait()
             return "translated"

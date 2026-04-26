@@ -397,6 +397,7 @@ def workflow_to_prompt_api(workflow: Dict[str, Any]) -> Tuple[Dict[str, Any], Op
 async def translate_prompt(
     prompt: str,
     original_prompt: Optional[str] = None,
+    mode: str = "translate",
     on_chunk: Optional[Any] = None,
     cancel_event: Optional[asyncio.Event] = None,
 ) -> str:
@@ -406,6 +407,16 @@ async def translate_prompt(
             "你输出最终英文逗号分隔tag。保持未要求改变的部分。只输出最终prompt，不解释，不输出中文。"
         )
         user = f"原始 prompt：\n{original_prompt}\n\n用户的新描述：\n{prompt}\n\n请生成最终的 prompt："
+    elif mode == "expand":
+        system = (
+            "你是 SD/Pony/Illustrious prompt 联想扩展专家。用户提供自然语言方向或关键词，"
+            "输入可能只是几个关键词、主题、氛围词或想法碎片。你需要把它们当作创作方向，"
+            "而不是逐词翻译；请主动发散联想，补充相关、具体、可用于生图的英文tag，"
+            "输出适合直接追加到现有prompt后面的英文逗号分隔tag。不要被固定类别限制，"
+            "可以从任何有助于成图效果、风格、叙事、细节或表现力的方向扩展。"
+            "不要输出解释，不要输出中文。"
+        )
+        user = prompt
     else:
         system = (
             "将自然语言转换为 SD/Pony/Illustrious 英文 tag prompt。"
@@ -1013,6 +1024,7 @@ class RunRequest(BaseModel):
     direct_prompt: str = ""
     nl_prompt: str = ""
     rewrite: bool = False
+    llm_mode: str = ""
     override: bool = False
     width: Optional[int] = None
     height: Optional[int] = None
@@ -1198,7 +1210,11 @@ async def _run_task(ws: WebSocket, req: RunRequest, *, client_ip: str = "unknown
         await emit(ws, {"type": "log", "message": "覆写模式：忽略工作流内置 prompt"})
 
     if req.nl_prompt:
-        await emit(ws, {"type": "log", "message": f"[2/4] LLM {'改写' if req.rewrite else '翻译'}中..."})
+        llm_mode = (req.llm_mode or ("rewrite" if req.rewrite else "translate")).strip().lower()
+        if llm_mode not in {"translate", "rewrite", "expand"}:
+            llm_mode = "translate"
+        mode_label = {"translate": "翻译", "rewrite": "改写", "expand": "联想"}[llm_mode]
+        await emit(ws, {"type": "log", "message": f"[2/4] LLM {mode_label}中..."})
         await emit(ws, {"type": "llm_start"})
         await _push_status({"stage": "llm"})
 
@@ -1206,7 +1222,7 @@ async def _run_task(ws: WebSocket, req: RunRequest, *, client_ip: str = "unknown
             await emit(ws, {"type": "llm_chunk", "delta": piece})
 
         base = req.direct_prompt or effective_builtin
-        if req.rewrite and base:
+        if llm_mode == "rewrite" and base:
             translated = await translate_prompt(
                 req.nl_prompt,
                 original_prompt=base,
@@ -1219,6 +1235,7 @@ async def _run_task(ws: WebSocket, req: RunRequest, *, client_ip: str = "unknown
         else:
             translated = await translate_prompt(
                 req.nl_prompt,
+                mode=llm_mode,
                 on_chunk=_on_chunk,
                 cancel_event=_active_cancel_event,
             )
