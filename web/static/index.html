@@ -29,6 +29,17 @@
   #lb-next { right: 8px; }
   #lb-close { position: absolute; top: 8px; right: 12px; background: transparent; color: #fff; border: 0; font-size: 28px; cursor: pointer; }
   #lb-title { color: #ddd; font-size: 12px; margin-right: auto; word-break: break-all; }
+  body.privacy-mask #images img,
+  body.privacy-mask #gallery img,
+  body.privacy-mask #hist-list img,
+  body.privacy-mask #lb-img {
+    filter: blur(30px) saturate(.65) opacity(.82);
+    transition: filter .15s ease;
+  }
+  body.privacy-mask #images a,
+  body.privacy-mask #gallery a,
+  body.privacy-mask #hist-list .hist-preview,
+  body.privacy-mask #lb-img-wrap { overflow: hidden; }
 </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -80,6 +91,10 @@
   <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
     <h1 class="text-2xl font-bold">🎨 ComfyUI 网页控制台</h1>
     <div class="flex items-center gap-3 flex-wrap">
+      <button id="btn-privacy-mask" type="button"
+        class="text-sm px-2 py-1 rounded border border-gray-300 bg-gray-100 text-gray-700 hover:bg-gray-200">
+        遮罩图片
+      </button>
       <a href="https://space.bilibili.com/325903362" target="_blank" rel="noopener"
          class="text-sm flex items-center gap-1 px-2 py-1 rounded bg-pink-100 text-pink-700 hover:bg-pink-200 border border-pink-300"
          title="作者 B 站主页 · 求关注">
@@ -301,6 +316,27 @@ const $ = (id) => document.getElementById(id);
 let allWorkflows = [];
 let defaultRes = {w: null, h: null};
 const history = [];  // {url, filename, prompt, time}
+const PRIVACY_MASK_KEY = 'privacyMaskEnabledV1';
+
+function setPrivacyMask(enabled) {
+  document.body.classList.toggle('privacy-mask', enabled);
+  try { localStorage.setItem(PRIVACY_MASK_KEY, enabled ? '1' : '0'); } catch {}
+  const btn = $('btn-privacy-mask');
+  if (!btn) return;
+  btn.textContent = enabled ? '取消遮罩' : '遮罩图片';
+  btn.className = enabled
+    ? 'text-sm px-2 py-1 rounded border border-red-300 bg-red-100 text-red-700 hover:bg-red-200'
+    : 'text-sm px-2 py-1 rounded border border-gray-300 bg-gray-100 text-gray-700 hover:bg-gray-200';
+}
+
+function initPrivacyMask() {
+  let enabled = false;
+  try { enabled = localStorage.getItem(PRIVACY_MASK_KEY) === '1'; } catch {}
+  setPrivacyMask(enabled);
+  $('btn-privacy-mask').addEventListener('click', () => {
+    setPrivacyMask(!document.body.classList.contains('privacy-mask'));
+  });
+}
 
 function renderHistory() {
   // 已替换为 ComfyUI output 目录浏览，不再渲染会话内历史
@@ -1232,6 +1268,7 @@ function refreshLightbox() { /* 兼容老调用：自建灯箱实时收集，无
   });
 })();
 
+initPrivacyMask();
 loadCurrent();
 loadList();
 loadGallery(true);
