@@ -308,6 +308,7 @@ async def translate_prompt(
     prompt: str,
     original_prompt: Optional[str] = None,
     on_chunk: Optional[Any] = None,
+    cancel_event: Optional[asyncio.Event] = None,
 ) -> str:
     if original_prompt:
         system = (
@@ -334,6 +335,8 @@ async def translate_prompt(
         async with client.stream("POST", f"{LMS_API}/v1/chat/completions", json=body) as r:
             r.raise_for_status()
             async for line in r.aiter_lines():
+                if cancel_event is not None and cancel_event.is_set():
+                    raise asyncio.CancelledError
                 if not line or not line.startswith("data:"):
                     continue
                 data = line[5:].strip()
@@ -594,11 +597,19 @@ async def api_translate(payload: Dict[str, Any]):
 
 @app.post("/api/interrupt")
 async def api_interrupt():
+    cancelled = False
+    global _current_run_task, _active_cancel_event
+    if _active_cancel_event is not None:
+        _active_cancel_event.set()
+    t = _current_run_task
+    if t and not t.done():
+        t.cancel()
+        cancelled = True
     try:
         await interrupt_prompt()
-        return {"ok": True}
-    except Exception as e:
-        raise HTTPException(500, str(e))
+    except Exception:
+        pass
+    return {"ok": True, "cancelled_task": cancelled}
 
 
 class RunRequest(BaseModel):
@@ -614,6 +625,10 @@ class RunRequest(BaseModel):
 
 # 单一并发锁
 _run_lock = asyncio.Lock()
+# 当前正在运行的 _run_task（用于外部取消）
+_current_run_task: Optional[asyncio.Task] = None
+# 当前任务的取消标记；用于覆盖 task cancellation 没能及时中断 LLM 流的情况
+_active_cancel_event: Optional[asyncio.Event] = None
 # 广播：所有打开 /ws/status 的客户端
 _status_subscribers: "set[WebSocket]" = set()
 # 当前活跃任务快照：None 表示空闲
@@ -710,8 +725,16 @@ async def ws_run(ws: WebSocket):
             init = await ws.receive_json()
         except Exception:
             return
+        global _current_run_task, _active_cancel_event
         try:
+            _current_run_task = asyncio.current_task()
+            _active_cancel_event = asyncio.Event()
             await _run_task(ws, RunRequest(**init))
+        except asyncio.CancelledError:
+            try:
+                await emit(ws, {"type": "error", "message": "已取消"})
+            except Exception:
+                pass
         except WebSocketDisconnect:
             return
         except Exception as e:
@@ -720,11 +743,19 @@ async def ws_run(ws: WebSocket):
             except Exception:
                 pass
         finally:
+            _current_run_task = None
+            _active_cancel_event = None
             await _push_status(reset=True)
 
 
 async def _run_task(ws: WebSocket, req: RunRequest):
     import time as _time
+
+    async def _stop_if_cancelled() -> bool:
+        if _active_cancel_event is not None and _active_cancel_event.is_set():
+            await emit(ws, {"type": "error", "message": "已取消"})
+            return True
+        return False
 
     path = req.workflow_path
     if not path:
@@ -766,13 +797,19 @@ async def _run_task(ws: WebSocket, req: RunRequest):
                 req.nl_prompt,
                 original_prompt=base,
                 on_chunk=_on_chunk,
+                cancel_event=_active_cancel_event,
             )
+            if await _stop_if_cancelled():
+                return
             sd_prompt = translated
         else:
             translated = await translate_prompt(
                 req.nl_prompt,
                 on_chunk=_on_chunk,
+                cancel_event=_active_cancel_event,
             )
+            if await _stop_if_cancelled():
+                return
             sd_prompt = sep.join(base_parts + [translated]) if translated else base
         await emit(ws, {"type": "llm_done", "text": translated})
     else:
@@ -793,6 +830,9 @@ async def _run_task(ws: WebSocket, req: RunRequest):
     batch = max(1, int(req.batch or 1))
     total_images = 0
     for round_idx in range(batch):
+        if await _stop_if_cancelled():
+            return
+
         for nid, ndata in prompt_dict.items():
             if ndata.get("class_type") == "KSampler":
                 inp = ndata.get("inputs", {})
