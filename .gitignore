@@ -3,6 +3,7 @@ web/__pycache__
 web/tests/__pycache__/
 
 # Local runtime/generated state
+.codex/
 web/local_config.py
 web/featured_outputs.json
 web/character_search_cache.json
