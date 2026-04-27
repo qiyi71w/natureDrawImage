@@ -26,11 +26,15 @@ except ImportError:
 # ===================================
 
 import asyncio
+import html
 import json
 import random
+import re
 import uuid
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote, urljoin
 
 import httpx
 import websockets
@@ -52,6 +56,10 @@ STATIC_DIR = Path(__file__).parent / "static"
 THUMB_DIR = Path(__file__).parent / "thumbnails"
 THUMB_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif")
 LORA_LINKS_DIR = Path(__file__).parent / "lora_links"
+FEATURED_OUTPUTS_FILE = Path(__file__).parent / "featured_outputs.json"
+DOWNLOADMOST_CHARACTER_BASE = "https://www.downloadmost.com/NoobAI-XL/danbooru-character/"
+CHARACTER_SEARCH_CACHE_FILE = Path(__file__).parent / "character_search_cache.json"
+CHARACTER_SEARCH_CACHE_VERSION = 1
 
 app = FastAPI(title="ComfyUI Web")
 # 文本响应（JSON / HTML / JS / CSS）做轻量级 gzip 压缩；图片字节走另一条路（webp 转码）
@@ -466,6 +474,216 @@ async def translate_prompt(
                     except Exception:
                         pass
     return "".join(chunks).strip()
+
+
+class _DownloadMostCharacterParser(HTMLParser):
+    def __init__(self, base_url: str):
+        super().__init__(convert_charrefs=True)
+        self.base_url = base_url
+        self.items: List[Dict[str, str]] = []
+        self._in_card = False
+        self._card_div_depth = 0
+        self._current: Dict[str, str] = {}
+        self._field: Optional[str] = None
+
+    def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
+        attr = {k: v or "" for k, v in attrs}
+        cls = attr.get("class", "")
+        if tag == "div" and "card" in cls.split() and "shadow-sm" in cls.split():
+            self._in_card = True
+            self._card_div_depth = 1
+            self._current = {}
+            return
+        if not self._in_card:
+            return
+        if tag == "div":
+            self._card_div_depth += 1
+        if tag == "span" and "text-warning" in cls:
+            self._field = "character"
+        elif tag == "div" and "alert-secondary" in cls:
+            self._field = "prompt"
+        elif tag == "img" and not self._current.get("preview_url"):
+            src = attr.get("src", "").strip()
+            if src:
+                self._current["preview_url"] = urljoin(self.base_url, src)
+
+    def handle_endtag(self, tag: str) -> None:
+        if not self._in_card:
+            return
+        if tag in ("span", "div"):
+            self._field = None
+        if tag == "div":
+            self._card_div_depth -= 1
+            if self._card_div_depth <= 0:
+                if self._current.get("character") and self._current.get("prompt"):
+                    name = _clean_downloadmost_text(self._current["character"])
+                    prompt = _clean_downloadmost_text(self._current["prompt"])
+                    self.items.append({
+                        "character": name,
+                        "prompt": prompt,
+                        "preview_url": self._current.get("preview_url", ""),
+                        "source_url": f"{DOWNLOADMOST_CHARACTER_BASE}search.asp?charactername={quote(name)}",
+                    })
+                self._in_card = False
+                self._current = {}
+
+    def handle_data(self, data: str) -> None:
+        if self._in_card and self._field:
+            self._current[self._field] = self._current.get(self._field, "") + data
+
+
+def _clean_downloadmost_text(text: str) -> str:
+    text = html.unescape(text or "")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _normalize_character_name(text: str) -> str:
+    text = (text or "").lower().replace("\\", "")
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def parse_downloadmost_characters(page_html: str, base_url: str = DOWNLOADMOST_CHARACTER_BASE) -> List[Dict[str, Any]]:
+    parser = _DownloadMostCharacterParser(base_url)
+    parser.feed(page_html or "")
+    return parser.items
+
+
+def _dedupe_character_queries(items: List[str]) -> List[str]:
+    seen = set()
+    out: List[str] = []
+    for item in items:
+        q = re.sub(r"\s+", " ", (item or "").strip())
+        q = q.strip("\"'`，,。")
+        key = q.lower()
+        if q and key not in seen:
+            seen.add(key)
+            out.append(q)
+    return out[:5]
+
+
+def _character_cache_key(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+
+def _empty_character_search_cache() -> Dict[str, Any]:
+    return {"version": CHARACTER_SEARCH_CACHE_VERSION, "llm": {}, "downloadmost": {}}
+
+
+def _load_character_search_cache() -> Dict[str, Any]:
+    if not CHARACTER_SEARCH_CACHE_FILE.exists():
+        return _empty_character_search_cache()
+    try:
+        data = json.loads(CHARACTER_SEARCH_CACHE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return _empty_character_search_cache()
+    if not isinstance(data, dict) or data.get("version") != CHARACTER_SEARCH_CACHE_VERSION:
+        return _empty_character_search_cache()
+    for section in ("llm", "downloadmost"):
+        if not isinstance(data.get(section), dict):
+            data[section] = {}
+    return data
+
+
+def _save_character_search_cache(cache: Dict[str, Any]) -> None:
+    CHARACTER_SEARCH_CACHE_FILE.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _get_character_cache_section(section: str, key: str) -> Optional[List[Any]]:
+    data = _load_character_search_cache().get(section, {}).get(key)
+    if isinstance(data, list):
+        return data
+    return None
+
+
+def _set_character_cache_section(section: str, key: str, items: List[Any]) -> None:
+    cache = _load_character_search_cache()
+    cache.setdefault(section, {})[key] = items
+    _save_character_search_cache(cache)
+
+
+def _annotate_downloadmost_items(items: List[Dict[str, Any]], query: str, limit: int) -> List[Dict[str, Any]]:
+    norm_query = _normalize_character_name(query)
+    out: List[Dict[str, Any]] = []
+    for item in items[:limit]:
+        copied = dict(item)
+        copied["matched_query"] = query
+        copied["exact"] = _normalize_character_name(copied.get("character", "")) == norm_query
+        out.append(copied)
+    return out
+
+
+async def translate_character_queries(query: str) -> List[str]:
+    cache_key = _character_cache_key(query)
+    cached = _get_character_cache_section("llm", cache_key)
+    if cached is not None:
+        return _dedupe_character_queries([str(x) for x in cached])
+
+    system = (
+        "你是二次元角色名检索助手。用户会输入中文名、英文名、日文罗马音、简称或别名。"
+        "请输出最可能用于 Danbooru 角色 tag 检索的英文/罗马音角色名候选。"
+        "如果能判断作品归属，可以加入带作品限定的候选，例如 amiya (arknights)。"
+        "如果存在同名或常见歧义，输出多个候选。只输出 JSON 字符串数组，不解释。"
+    )
+    body = {
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": query}],
+        "temperature": 0.2,
+        "max_tokens": 300,
+        "stream": False,
+    }
+    async with httpx.AsyncClient(timeout=60) as client:
+        r = await client.post(f"{LMS_API}/v1/chat/completions", json=body)
+        r.raise_for_status()
+    text = (((r.json().get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+    try:
+        data = json.loads(text)
+        if isinstance(data, list):
+            result = _dedupe_character_queries([str(x) for x in data])
+            _set_character_cache_section("llm", cache_key, result)
+            return result
+    except Exception:
+        pass
+    lines = re.split(r"[\n,，]+", text)
+    result = _dedupe_character_queries(lines)
+    _set_character_cache_section("llm", cache_key, result)
+    return result
+
+
+async def search_downloadmost_characters(query: str, limit: int = 12) -> List[Dict[str, Any]]:
+    cache_key = _character_cache_key(query)
+    cached = _get_character_cache_section("downloadmost", cache_key)
+    if cached is not None:
+        return _annotate_downloadmost_items([x for x in cached if isinstance(x, dict)], query, limit)
+
+    url = f"{DOWNLOADMOST_CHARACTER_BASE}search.asp?charactername={quote(query)}"
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+        r = await client.get(url)
+        r.raise_for_status()
+    items = parse_downloadmost_characters(r.text, str(r.url))
+    _set_character_cache_section("downloadmost", cache_key, items)
+    return _annotate_downloadmost_items(items, query, limit)
+
+
+async def strip_character_clothing_tags(prompt: str) -> str:
+    system = (
+        "你是 SD/Pony/Illustrious 角色 tag 清理助手。用户会给你一段英文逗号分隔 tag。"
+        "你只能删除服装、制服、鞋袜、手套、帽子、饰品、手持物、道具、背景、姿势、表情、构图、"
+        "质量词和风格词相关 tag；不要改写、不要翻译、不要新增 tag。"
+        "保留角色身份 tag、作品 tag、人数/性别 tag，以及描述角色固有外貌的 tag，例如发色、发型、"
+        "眼睛颜色、耳朵、尾巴、角、翅膀、肤色、体型和明显身体特征。"
+        "保持剩余 tag 的原始英文写法和原始顺序，只输出逗号分隔 tag，不解释，不输出中文。"
+    )
+    body = {
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+        "temperature": 0.0,
+        "max_tokens": 500,
+        "stream": False,
+    }
+    async with httpx.AsyncClient(timeout=60) as client:
+        r = await client.post(f"{LMS_API}/v1/chat/completions", json=body)
+        r.raise_for_status()
+    return (((r.json().get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
 
 
 # ---------------- routes ----------------
@@ -1007,6 +1225,52 @@ async def api_translate(payload: Dict[str, Any]):
         return {"text": out}
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+@app.post("/api/character/search")
+async def api_character_search(payload: Dict[str, Any]):
+    query = str((payload or {}).get("query") or "").strip()
+    if not query:
+        raise HTTPException(400, "query required")
+    try:
+        candidates = await translate_character_queries(query)
+    except Exception as e:
+        raise HTTPException(502, f"LLM 角色名翻译失败: {e}")
+    if not candidates:
+        candidates = [query]
+    if query.isascii():
+        candidates = _dedupe_character_queries([query, *candidates])
+
+    items: List[Dict[str, Any]] = []
+    seen = set()
+    searched: List[str] = []
+    for candidate in candidates:
+        searched.append(candidate)
+        for item in await search_downloadmost_characters(candidate):
+            key = _normalize_character_name(item.get("character", ""))
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            items.append(item)
+            if len(items) >= 20:
+                break
+        if len(items) >= 20:
+            break
+    exact_count = sum(1 for item in items if item.get("exact"))
+    status = "not_found" if not items else ("exact" if exact_count == 1 and len(items) == 1 else "ambiguous")
+    return {"query": query, "candidates": candidates, "searched": searched, "status": status, "items": items}
+
+
+@app.post("/api/character/appearance-tags")
+async def api_character_appearance_tags(payload: Dict[str, Any]):
+    prompt = str((payload or {}).get("prompt") or "").strip()
+    if not prompt:
+        raise HTTPException(400, "prompt required")
+    try:
+        out = await strip_character_clothing_tags(prompt)
+        return {"text": out}
+    except Exception as e:
+        raise HTTPException(502, f"LLM 去除服装 tag 失败: {e}")
 
 
 @app.post("/api/interrupt")
