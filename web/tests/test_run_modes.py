@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import unittest
 
 import app
@@ -43,7 +44,7 @@ class RunModeTests(unittest.IsolatedAsyncioTestCase):
         def fake_workflow_to_prompt_api(data):
             prompt_dict = {
                 "1": {"inputs": {"text": builtin_text}, "class_type": "CLIPTextEncode"},
-                "2": {"inputs": {"seed": 1}, "class_type": "KSampler"},
+                "2": {"inputs": {"seed": 1, "steps": 20}, "class_type": "KSampler"},
             }
             return prompt_dict, ("1", "text")
 
@@ -55,10 +56,12 @@ class RunModeTests(unittest.IsolatedAsyncioTestCase):
                 "has_on_chunk": on_chunk is not None,
                 "cancel_event": cancel_event,
             })
+            if isinstance(translated_text, list):
+                return translated_text[len(translate_calls) - 1]
             return translated_text
 
         async def fake_submit_prompt(prompt):
-            submitted_prompts.append(prompt)
+            submitted_prompts.append(copy.deepcopy(prompt))
             return "prompt-id"
 
         async def fake_wait_for(prompt_id, ws, prompt_dict, timeout=600):
@@ -150,6 +153,43 @@ class RunModeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(submitted_prompts[0]["1"]["inputs"]["text"], "builtin tags, direct tags, expanded tags")
         self.assertTrue(any(m.get("type") == "log" and "LLM 联想中" in m.get("message", "") for m in ws.messages))
 
+    async def test_brainstorm_mode_appends_brainstorm_text_to_base(self):
+        req = app.RunRequest(
+            workflow_path="wf.json",
+            direct_prompt="direct tags",
+            nl_prompt="running, beach, sunset, sword",
+            llm_mode="brainstorm",
+        )
+
+        ws, translate_calls, submitted_prompts = await self._run_case(req, translated_text="brainstorm tags")
+
+        self.assertEqual(len(translate_calls), 1)
+        self.assertIsNone(translate_calls[0]["original_prompt"])
+        self.assertEqual(translate_calls[0]["mode"], "brainstorm")
+        self.assertEqual(submitted_prompts[0]["1"]["inputs"]["text"], "builtin tags, direct tags, brainstorm tags")
+        self.assertTrue(any(m.get("type") == "log" and "LLM 脑洞中" in m.get("message", "") for m in ws.messages))
+
+    async def test_batch_can_rerun_llm_for_each_round(self):
+        req = app.RunRequest(
+            workflow_path="wf.json",
+            direct_prompt="direct tags",
+            nl_prompt="海边夏天",
+            llm_mode="expand",
+            batch=2,
+            rerun_llm_each_batch=True,
+        )
+
+        ws, translate_calls, submitted_prompts = await self._run_case(req, translated_text=["expanded one", "expanded two"])
+
+        self.assertEqual(len(translate_calls), 2)
+        self.assertEqual(len(submitted_prompts), 2)
+        self.assertEqual(submitted_prompts[0]["1"]["inputs"]["text"], "builtin tags, direct tags, expanded one")
+        self.assertEqual(submitted_prompts[1]["1"]["inputs"]["text"], "builtin tags, direct tags, expanded two")
+        llm_done = [m for m in ws.messages if m.get("type") == "llm_done"]
+        self.assertEqual([m.get("text") for m in llm_done], ["expanded one", "expanded two"])
+        image_events = [m for m in ws.messages if m.get("type") == "image"]
+        self.assertEqual([m.get("round") for m in image_events], [1, 2])
+
     async def test_empty_nl_prompt_skips_llm_and_uses_base(self):
         req = app.RunRequest(
             workflow_path="wf.json",
@@ -179,6 +219,22 @@ class RunModeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(submitted_prompts[0]["1"]["inputs"]["text"], "direct tags")
         self.assertTrue(any(
             m.get("type") == "log" and "覆写模式" in m.get("message", "")
+            for m in ws.messages
+        ))
+
+    async def test_steps_override_updates_sampler_steps(self):
+        req = app.RunRequest(
+            workflow_path="wf.json",
+            direct_prompt="direct tags",
+            steps=30,
+        )
+
+        ws, translate_calls, submitted_prompts = await self._run_case(req)
+
+        self.assertEqual(translate_calls, [])
+        self.assertEqual(submitted_prompts[0]["2"]["inputs"]["steps"], 30)
+        self.assertTrue(any(
+            m.get("type") == "log" and "步数覆盖为 30" in m.get("message", "")
             for m in ws.messages
         ))
 

@@ -55,6 +55,11 @@ OUTPUT_DIR = Path(OUTPUT_DIR_STR)
 STATIC_DIR = Path(__file__).parent / "static"
 THUMB_DIR = Path(__file__).parent / "thumbnails"
 THUMB_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+THUMBNAIL_PROMPT_SUFFIX = (
+    "1girl, solo, masterpiece, best quality, high quality, front view, upper body, cowboy shot, "
+    "centered composition, looking at viewer, character focus, detailed face, detailed eyes, sharp focus"
+)
+THUMBNAIL_STEPS = 20
 LORA_LINKS_DIR = Path(__file__).parent / "lora_links"
 FEATURED_OUTPUTS_FILE = Path(__file__).parent / "featured_outputs.json"
 DOWNLOADMOST_CHARACTER_BASE = "https://www.downloadmost.com/NoobAI-XL/danbooru-character/"
@@ -425,12 +430,33 @@ async def translate_prompt(
         user = f"原始 prompt：\n{original_prompt}\n\n用户的新描述：\n{prompt}\n\n请生成最终的 prompt："
     elif mode == "expand":
         system = (
-            "你是 SD/Pony/Illustrious prompt 联想扩展专家。用户提供自然语言方向或关键词，"
-            "输入可能只是几个关键词、主题、氛围词或想法碎片。你需要把它们当作创作方向，"
-            "而不是逐词翻译；请主动发散联想，补充相关、具体、可用于生图的英文tag，"
-            "输出适合直接追加到现有prompt后面的英文逗号分隔tag。不要被固定类别限制，"
-            "可以从任何有助于成图效果、风格、叙事、细节或表现力的方向扩展。"
-            "不要输出解释，不要输出中文。"
+            "你是 SD/Pony/Illustrious prompt 联想扩展专家。用户输入的是自然语言方向、"
+            "关键词、主题、氛围词或想法碎片。你的任务不是逐词翻译，而是把用户输入当作"
+            "创作方向，扩展成适合直接追加到现有prompt后的英文逗号分隔tag。"
+            "第一优先级：忠实遵循用户已经明确给出的主体、主题、动作、关系、场景、风格、"
+            "服装、情绪和限制条件；不要改成相反、无关或覆盖用户原意的内容。"
+            "第二优先级：在不违背原意的基础上主动发散，补足用户可能省略但有助于成图的"
+            "具体画面信息。优先补充场景环境、动作/姿态、互动关系、道具、表情/情绪、"
+            "镜头距离、视角、构图、时间、天气、光线、材质、氛围和风格细节。"
+            "输出通常为 25 到 45 个英文tag；用户输入很短时也要补出完整画面，"
+            "但不要为了凑数量加入重复、空泛、互相冲突或互斥的tag。"
+            "同一类别只选择最适合用户意图的一个或少数几个：例如镜头距离不要同时输出"
+            " wide shot, medium shot, close-up；时间不要同时输出 day, night；"
+            "天气不要同时输出 sunny, rainy；视角不要同时输出 from above, from below。"
+            "只输出英文tag列表，不要解释，不要输出中文，不要使用编号或分段。"
+        )
+        user = prompt
+    elif mode == "brainstorm":
+        system = (
+            "你是 SD/Pony/Illustrious prompt 脑洞扩展专家。用户通常只会输入四五个词，"
+            "可能是动作、背景、场景、氛围、物品或任意主题碎片。你需要把这些词当作核心主题，"
+            "主动发散成一套完整、具体、可直接生图的英文逗号分隔tag。"
+            "不要逐词翻译，不要只补同义词。要围绕这些主题构造完整画面：角色身份与外观、服装、"
+            "动作姿态、表情情绪、互动关系、场景空间、背景元素、道具物品、镜头距离、视角、构图、"
+            "光线、时间、天气、材质、氛围和风格细节。"
+            "优先保留用户给出的词的语义，不要改成相反或无关内容；在此基础上大胆补足画面。"
+            "输出通常为 35 到 60 个英文tag。避免互相冲突的tag，同一类别只选最适合的一两个。"
+            "只输出英文tag列表，不要解释，不要输出中文，不要编号或分段。"
         )
         user = prompt
     else:
@@ -718,6 +744,32 @@ def find_thumbnail(wf_path: str) -> Optional[Path]:
     return None
 
 
+def thumbnail_target_path(wf_path: str, suffix: str = ".png") -> Path:
+    suffix = suffix.lower()
+    if suffix not in THUMB_EXTS:
+        suffix = ".png"
+    stem = wf_path[:-5] if wf_path.lower().endswith(".json") else wf_path
+    target = (THUMB_DIR / f"{stem}{suffix}").resolve()
+    try:
+        target.relative_to(THUMB_DIR.resolve())
+    except ValueError:
+        raise HTTPException(400, "invalid workflow path")
+    return target
+
+
+def _image_suffix(filename: str, content_type: str = "") -> str:
+    suffix = Path(filename or "").suffix.lower()
+    if suffix in THUMB_EXTS:
+        return suffix
+    by_type = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+    }
+    return by_type.get((content_type or "").split(";")[0].lower(), ".png")
+
+
 @app.get("/api/workflows")
 async def api_list():
     try:
@@ -760,6 +812,44 @@ def _resolve_output_path(rel: str) -> Path:
     return candidate
 
 
+def _load_featured_outputs() -> List[str]:
+    if not FEATURED_OUTPUTS_FILE.exists():
+        return []
+    try:
+        data = json.loads(FEATURED_OUTPUTS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if not isinstance(data, list):
+        return []
+    out: List[str] = []
+    for item in data:
+        if isinstance(item, str) and item and item not in out:
+            out.append(item)
+    return out
+
+
+def _save_featured_outputs(items: List[str]) -> None:
+    FEATURED_OUTPUTS_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _existing_featured_outputs() -> List[str]:
+    existing: List[str] = []
+    changed = False
+    for rel in _load_featured_outputs():
+        try:
+            p = _resolve_output_path(rel)
+            ok = p.is_file() and p.suffix.lower() in OUTPUT_IMAGE_EXTS
+        except HTTPException:
+            ok = False
+        if ok:
+            existing.append(rel)
+        else:
+            changed = True
+    if changed:
+        _save_featured_outputs(existing)
+    return existing
+
+
 @app.get("/api/output/list")
 async def api_output_list(limit: int = 500, offset: int = 0):
     """递归列出 OUTPUT_DIR 下所有图片，按 mtime 倒序，分页。"""
@@ -794,6 +884,36 @@ async def api_output_list(limit: int = 500, offset: int = 0):
     }
 
 
+@app.get("/api/output/featured")
+async def api_featured_outputs():
+    items = _existing_featured_outputs()
+    return {"items": [{"path": rel} for rel in items], "total": len(items)}
+
+
+@app.post("/api/output/featured")
+async def api_add_featured_output(payload: Dict[str, str]):
+    rel = (payload or {}).get("path", "")
+    p = _resolve_output_path(rel)
+    if not p.is_file():
+        raise HTTPException(404, "not found")
+    if p.suffix.lower() not in OUTPUT_IMAGE_EXTS:
+        raise HTTPException(400, "not an image")
+    items = _load_featured_outputs()
+    if rel not in items:
+        items.insert(0, rel)
+        _save_featured_outputs(items)
+    return {"featured": True, "path": rel}
+
+
+@app.delete("/api/output/featured")
+async def api_remove_featured_output(path: str):
+    items = _load_featured_outputs()
+    next_items = [rel for rel in items if rel != path]
+    if len(next_items) != len(items):
+        _save_featured_outputs(next_items)
+    return {"featured": False, "path": path}
+
+
 @app.get("/api/output/file")
 async def api_output_file(request: Request, path: str, full: int = 0):
     p = _resolve_output_path(path)
@@ -807,6 +927,24 @@ async def api_output_file(request: Request, path: str, full: int = 0):
         media = {"jpg": "image/jpeg", "jpeg": "image/jpeg"}.get(ext, f"image/{ext}")
         return FileResponse(str(p), media_type=media)
     return _serve_image_maybe_webp(request, p, quality=82, max_side=1600)
+
+
+@app.delete("/api/output/file")
+async def api_delete_output_file(path: str):
+    p = _resolve_output_path(path)
+    if not p.is_file():
+        raise HTTPException(404, "not found")
+    if p.suffix.lower() not in OUTPUT_IMAGE_EXTS:
+        raise HTTPException(400, "not an image")
+    try:
+        p.unlink()
+        _WEBP_CACHE.clear()
+        featured = _load_featured_outputs()
+        if path in featured:
+            _save_featured_outputs([rel for rel in featured if rel != path])
+    except OSError as e:
+        raise HTTPException(500, str(e))
+    return {"deleted": path}
 
 
 def _extract_positive_from_prompt_json(prompt_json: Dict[str, Any]) -> str:
@@ -1110,6 +1248,27 @@ def apply_resolution(prompt_dict: Dict[str, Any], width: int, height: int) -> in
     return n
 
 
+def apply_steps(prompt_dict: Dict[str, Any], steps: int) -> int:
+    """把所有持有 steps 输入的节点都改写。返回修改的节点数。"""
+    n = 0
+    for ndata in prompt_dict.values():
+        inp = ndata.get("inputs", {}) or {}
+        if "steps" in inp and isinstance(inp["steps"], (int, float)):
+            inp["steps"] = steps
+            n += 1
+    return n
+
+
+def append_thumbnail_prompt_suffix(prompt_dict: Dict[str, Any], positive_ref: Optional[Tuple[str, str]]) -> bool:
+    if not positive_ref:
+        return False
+    node_id, input_name = positive_ref
+    inputs = prompt_dict.get(node_id, {}).get("inputs", {})
+    current = inputs.get(input_name, "") or ""
+    inputs[input_name] = f"{current}, {THUMBNAIL_PROMPT_SUFFIX}" if current.strip() else THUMBNAIL_PROMPT_SUFFIX
+    return True
+
+
 @app.get("/api/workflows/current")
 async def api_current(path: Optional[str] = None):
     """返回指定工作流的摘要 + 默认分辨率。前端传 path（来自浏览器 localStorage）。
@@ -1276,9 +1435,11 @@ async def api_character_appearance_tags(payload: Dict[str, Any]):
 @app.post("/api/interrupt")
 async def api_interrupt():
     cancelled = False
-    global _current_run_task, _active_cancel_event
+    global _current_run_task, _active_cancel_event, _thumbnail_cancel_event
     if _active_cancel_event is not None:
         _active_cancel_event.set()
+    if _thumbnail_cancel_event is not None:
+        _thumbnail_cancel_event.set()
     t = _current_run_task
     if t and not t.done():
         t.cancel()
@@ -1300,7 +1461,9 @@ class RunRequest(BaseModel):
     override: bool = False
     width: Optional[int] = None
     height: Optional[int] = None
+    steps: Optional[int] = None
     batch: int = 1
+    rerun_llm_each_batch: bool = False
 
 
 # 单一并发锁
@@ -1309,10 +1472,12 @@ _run_lock = asyncio.Lock()
 _current_run_task: Optional[asyncio.Task] = None
 # 当前任务的取消标记；用于覆盖 task cancellation 没能及时中断 LLM 流的情况
 _active_cancel_event: Optional[asyncio.Event] = None
+_thumbnail_cancel_event: Optional[asyncio.Event] = None
 # 广播：所有打开 /ws/status 的客户端
 _status_subscribers: "set[WebSocket]" = set()
 # 当前活跃任务快照：None 表示空闲
 _active_status: Optional[Dict[str, Any]] = None
+_thumbnail_status: Optional[Dict[str, Any]] = None
 # 当前任务的事件回放缓冲（新连入的客户端可重建 UI）
 # 元素: 原始 send 给前端的 dict
 _event_log: List[Dict[str, Any]] = []
@@ -1346,6 +1511,19 @@ async def emit(ws: Optional[WebSocket], msg: Dict[str, Any]) -> None:
     await _broadcast({"type": "mirror", "event": msg})
 
 
+async def _emit_thumbnail(ws: Optional[WebSocket], msg: Dict[str, Any]) -> None:
+    global _thumbnail_status
+    _event_log.append(msg)
+    if msg.get("type") in {"thumb_start", "thumb_item", "thumb_saved", "thumb_failed", "thumb_done", "thumb_error", "thumb_cancelled"}:
+        _thumbnail_status = dict(msg)
+    if ws is not None:
+        try:
+            await ws.send_json(msg)
+        except Exception:
+            pass
+    await _broadcast({"type": "mirror", "event": msg})
+
+
 async def _push_status(patch: Optional[Dict[str, Any]] = None, *, reset: bool = False) -> None:
     """更新 _active_status 并向所有订阅者广播。"""
     global _active_status
@@ -1368,6 +1546,8 @@ async def ws_status(ws: WebSocket):
     try:
         # 立即推快照
         await ws.send_json({"type": "status", **(_active_status or _idle_snapshot())})
+        if _thumbnail_status and _thumbnail_status.get("type") not in {"thumb_done", "thumb_error", "thumb_cancelled"}:
+            await ws.send_json({"type": "mirror", "event": _thumbnail_status})
         # 回放本次任务已发生的所有事件，让新页面重建 UI
         for evt in list(_event_log):
             await ws.send_json({"type": "mirror", "event": evt})
@@ -1435,6 +1615,111 @@ async def ws_run(ws: WebSocket):
             await _push_status(reset=True)
 
 
+@app.websocket("/ws/thumbnails")
+async def ws_generate_thumbnails(ws: WebSocket):
+    global _thumbnail_cancel_event
+    await ws.accept()
+    if _run_lock.locked():
+        await ws.send_json({
+            "type": "thumb_error",
+            "message": "服务器繁忙：已有任务在执行",
+            "busy": True,
+        })
+        await ws.close()
+        return
+
+    async with _run_lock:
+        _thumbnail_cancel_event = asyncio.Event()
+        try:
+            await _generate_missing_thumbnails(ws, _thumbnail_cancel_event)
+        except WebSocketDisconnect:
+            return
+        except Exception as e:
+            try:
+                await _emit_thumbnail(ws, {"type": "thumb_error", "message": str(e)})
+            except Exception:
+                pass
+        finally:
+            _thumbnail_cancel_event = None
+
+
+async def _generate_missing_thumbnails(ws: WebSocket, cancel_event: asyncio.Event) -> None:
+    workflows = await list_workflows()
+    missing = [w for w in workflows if not find_thumbnail(w.get("path", ""))]
+    await _emit_thumbnail(ws, {"type": "thumb_start", "total": len(missing)})
+    if not missing:
+        await _emit_thumbnail(ws, {"type": "thumb_done", "total": 0, "generated": 0, "failed": 0})
+        return
+
+    generated = 0
+    failed = 0
+    for idx, item in enumerate(missing, start=1):
+        if cancel_event.is_set():
+            await _emit_thumbnail(ws, {"type": "thumb_cancelled", "total": len(missing), "generated": generated, "failed": failed})
+            return
+        path = item.get("path", "")
+        await _emit_thumbnail(ws, {"type": "thumb_item", "index": idx, "total": len(missing), "path": path})
+        try:
+            data = await get_workflow(path)
+            prompt_dict, positive_ref = workflow_to_prompt_api(data)
+            append_thumbnail_prompt_suffix(prompt_dict, positive_ref)
+            n = apply_resolution(prompt_dict, 1024, 1024)
+            step_nodes = apply_steps(prompt_dict, THUMBNAIL_STEPS)
+            for ndata in prompt_dict.values():
+                if ndata.get("class_type") == "KSampler":
+                    inp = ndata.get("inputs", {})
+                    if "seed" in inp:
+                        inp["seed"] = random.randint(0, 2**63 - 1)
+            prompt_id = await submit_prompt(prompt_dict)
+            await _emit_thumbnail(ws, {
+                "type": "thumb_log",
+                "message": f"{path}: prompt_id={prompt_id[:8]}, 分辨率节点 {n}, 步数节点 {step_nodes}",
+            })
+            if cancel_event.is_set():
+                await _emit_thumbnail(ws, {"type": "thumb_cancelled", "total": len(missing), "generated": generated, "failed": failed})
+                return
+            history = await _wait_for(prompt_id, ws, prompt_dict, emit_progress=False)
+            if cancel_event.is_set():
+                await _emit_thumbnail(ws, {"type": "thumb_cancelled", "total": len(missing), "generated": generated, "failed": failed})
+                return
+            image = None
+            for _, node_output in (history.get("outputs") or {}).items():
+                for img in node_output.get("images", []) or []:
+                    if img.get("filename"):
+                        image = img
+                        break
+                if image:
+                    break
+            if not image:
+                raise RuntimeError("没有图片输出")
+            content, content_type = await download_image(
+                image.get("filename", ""),
+                image.get("subfolder", ""),
+                image.get("type", "output"),
+            )
+            target = thumbnail_target_path(path, _image_suffix(image.get("filename", ""), content_type))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            generated += 1
+            await _emit_thumbnail(ws, {
+                "type": "thumb_saved",
+                "index": idx,
+                "total": len(missing),
+                "path": path,
+                "thumbnail": target.relative_to(THUMB_DIR.resolve()).as_posix(),
+            })
+        except Exception as e:
+            failed += 1
+            await _emit_thumbnail(ws, {
+                "type": "thumb_failed",
+                "index": idx,
+                "total": len(missing),
+                "path": path,
+                "message": str(e),
+            })
+    await _emit_thumbnail(ws, {"type": "thumb_done", "total": len(missing), "generated": generated, "failed": failed})
+
+
 async def _run_task(ws: WebSocket, req: RunRequest, *, client_ip: str = "unknown"):
     import time as _time
 
@@ -1481,12 +1766,24 @@ async def _run_task(ws: WebSocket, req: RunRequest, *, client_ip: str = "unknown
     if req.override:
         await emit(ws, {"type": "log", "message": "覆写模式：忽略工作流内置 prompt"})
 
-    if req.nl_prompt:
+    batch = max(1, int(req.batch or 1))
+    rerun_llm_each_batch = bool(req.rerun_llm_each_batch and req.nl_prompt and batch > 1)
+
+    async def build_sd_prompt(round_idx: Optional[int] = None) -> Optional[str]:
+        round_label = ""
+        if round_idx is not None and rerun_llm_each_batch:
+            round_label = f" ({round_idx + 1}/{batch})"
+
+        if not req.nl_prompt:
+            parts = [p for p in (effective_builtin, req.direct_prompt) if p]
+            await emit(ws, {"type": "log", "message": "[2/4] 跳过 LLM"})
+            return sep.join(parts)
+
         llm_mode = (req.llm_mode or ("rewrite" if req.rewrite else "translate")).strip().lower()
-        if llm_mode not in {"translate", "rewrite", "expand"}:
+        if llm_mode not in {"translate", "rewrite", "expand", "brainstorm"}:
             llm_mode = "translate"
-        mode_label = {"translate": "翻译", "rewrite": "改写", "expand": "联想"}[llm_mode]
-        await emit(ws, {"type": "log", "message": f"[2/4] LLM {mode_label}中..."})
+        mode_label = {"translate": "翻译", "rewrite": "改写", "expand": "联想", "brainstorm": "脑洞"}[llm_mode]
+        await emit(ws, {"type": "log", "message": f"[2/4]{round_label} LLM {mode_label}中..."})
         await emit(ws, {"type": "llm_start"})
         await _push_status({"stage": "llm"})
 
@@ -1502,7 +1799,7 @@ async def _run_task(ws: WebSocket, req: RunRequest, *, client_ip: str = "unknown
                 cancel_event=_active_cancel_event,
             )
             if await _stop_if_cancelled():
-                return
+                return None
             sd_prompt = translated
         else:
             translated = await translate_prompt(
@@ -1512,31 +1809,51 @@ async def _run_task(ws: WebSocket, req: RunRequest, *, client_ip: str = "unknown
                 cancel_event=_active_cancel_event,
             )
             if await _stop_if_cancelled():
-                return
+                return None
             parts = [p for p in (effective_builtin, req.direct_prompt, translated) if p]
             sd_prompt = sep.join(parts)
-        await emit(ws, {"type": "llm_done", "text": translated})
-    else:
-        parts = [p for p in (effective_builtin, req.direct_prompt) if p]
-        sd_prompt = sep.join(parts)
-        await emit(ws, {"type": "log", "message": "[2/4] 跳过 LLM"})
+        await emit(ws, {
+            "type": "llm_done",
+            "text": translated,
+            "round": (round_idx + 1) if round_idx is not None else 1,
+            "batch": batch,
+        })
+        return sd_prompt
 
-    if not sd_prompt.strip():
-        await emit(ws, {"type": "error", "message": "最终 prompt 为空"})
-        return
-
-    prompt_dict[node_id]["inputs"][input_name] = sd_prompt
+    sd_prompt = None if rerun_llm_each_batch else await build_sd_prompt()
+    if not rerun_llm_each_batch:
+        if sd_prompt is None:
+            return
+        if not sd_prompt.strip():
+            await emit(ws, {"type": "error", "message": "最终 prompt 为空"})
+            return
+        prompt_dict[node_id]["inputs"][input_name] = sd_prompt
 
     if req.width and req.height and req.width > 0 and req.height > 0:
         n = apply_resolution(prompt_dict, int(req.width), int(req.height))
         if n:
             await emit(ws, {"type": "log", "message": f"分辨率覆盖为 {req.width}x{req.height} ({n} 个节点)"})
+    if req.steps and req.steps > 0:
+        steps = max(1, min(1000, int(req.steps)))
+        n = apply_steps(prompt_dict, steps)
+        if n:
+            await emit(ws, {"type": "log", "message": f"步数覆盖为 {steps} ({n} 个节点)"})
 
-    batch = max(1, int(req.batch or 1))
     total_images = 0
+    last_sd_prompt = sd_prompt or ""
     for round_idx in range(batch):
         if await _stop_if_cancelled():
             return
+
+        if rerun_llm_each_batch:
+            sd_prompt = await build_sd_prompt(round_idx)
+            if sd_prompt is None:
+                return
+            if not sd_prompt.strip():
+                await emit(ws, {"type": "error", "message": "最终 prompt 为空"})
+                return
+            prompt_dict[node_id]["inputs"][input_name] = sd_prompt
+            last_sd_prompt = sd_prompt
 
         for nid, ndata in prompt_dict.items():
             if ndata.get("class_type") == "KSampler":
@@ -1597,13 +1914,21 @@ async def _run_task(ws: WebSocket, req: RunRequest, *, client_ip: str = "unknown
                 "filename": img["filename"],
                 "subfolder": img["subfolder"],
                 "image_type": img["type"],
+                "round": round_idx + 1,
+                "batch": batch,
             })
         total_images += len(images)
 
-    await emit(ws, {"type": "done", "final_prompt": sd_prompt, "count": total_images, "batch": batch})
+    await emit(ws, {"type": "done", "final_prompt": last_sd_prompt, "count": total_images, "batch": batch})
 
 
-async def _wait_for(prompt_id: str, ws: WebSocket, prompt_dict: Dict[str, Any], timeout: int = 600) -> Dict[str, Any]:
+async def _wait_for(
+    prompt_id: str,
+    ws: Optional[WebSocket],
+    prompt_dict: Dict[str, Any],
+    timeout: int = 600,
+    emit_progress: bool = True,
+) -> Dict[str, Any]:
     ws_url = f"{COMFYUI_WS}/ws?clientId={CLIENT_ID}"
     start = asyncio.get_event_loop().time()
     completed = False
@@ -1651,21 +1976,23 @@ async def _wait_for(prompt_id: str, ws: WebSocket, prompt_dict: Dict[str, Any], 
                             "done": done,
                             "total": total,
                         }
-                        await emit(ws, prog)
-                        await _push_status({
-                            "stage": "generating",
-                            "node": cls,
-                            "value": cv,
-                            "max": cm,
-                            "done": done,
-                            "total": total,
-                        })
+                        if emit_progress:
+                            await emit(ws, prog)
+                            await _push_status({
+                                "stage": "generating",
+                                "node": cls,
+                                "value": cv,
+                                "max": cm,
+                                "done": done,
+                                "total": total,
+                            })
                 elif msg_type == "executing":
                     node = data.get("node")
                     if node is not None:
                         cls = prompt_dict.get(str(node), {}).get("class_type", str(node))
-                        await emit(ws, {"type": "progress", "node": cls})
-                        await _push_status({"stage": "generating", "node": cls})
+                        if emit_progress:
+                            await emit(ws, {"type": "progress", "node": cls})
+                            await _push_status({"stage": "generating", "node": cls})
                     elif data.get("prompt_id") == prompt_id:
                         completed = True
                         break

@@ -30,16 +30,172 @@
   #lb-close { position: absolute; top: 8px; right: 12px; background: transparent; color: #fff; border: 0; font-size: 28px; cursor: pointer; }
   #lb-title { color: #ddd; font-size: 12px; margin-right: auto; word-break: break-all; }
   body.privacy-mask #images img,
+  body.privacy-mask #featured-gallery img,
   body.privacy-mask #gallery img,
   body.privacy-mask #hist-list img,
   body.privacy-mask #lb-img {
-    filter: blur(30px) saturate(.65) opacity(.82);
+    filter: blur(24px) saturate(1.35) contrast(.72) brightness(1.08);
     transition: filter .15s ease;
   }
   body.privacy-mask #images a,
+  body.privacy-mask #featured-gallery a,
   body.privacy-mask #gallery a,
   body.privacy-mask #hist-list .hist-preview,
   body.privacy-mask #lb-img-wrap { overflow: hidden; }
+  body.privacy-mask #images a::after,
+  body.privacy-mask #featured-gallery a::after,
+  body.privacy-mask #gallery a::after,
+  body.privacy-mask #hist-list .hist-preview::after,
+  body.privacy-mask #lb-img-wrap::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 25% 25%, rgba(255,255,255,.28), transparent 38%),
+      linear-gradient(135deg, rgba(255,255,255,.18), rgba(120,180,255,.16));
+    backdrop-filter: blur(4px);
+  }
+  body.privacy-mask #images a,
+  body.privacy-mask #featured-gallery a,
+  body.privacy-mask #gallery a,
+  body.privacy-mask #hist-list .hist-preview,
+  body.privacy-mask #lb-img-wrap { position: relative; }
+  body.dark-mode {
+    background: #0f172a;
+    color: #dbeafe;
+  }
+  body.dark-mode .bg-white,
+  body.dark-mode .bg-gray-50,
+  body.dark-mode .bg-gray-100,
+  body.dark-mode .bg-slate-50 {
+    background-color: #172033 !important;
+  }
+  body.dark-mode .bg-gray-200 {
+    background-color: #334155 !important;
+    color: #e5e7eb !important;
+  }
+  body.dark-mode .bg-gray-300 {
+    background-color: #475569 !important;
+    color: #f8fafc !important;
+  }
+  body.dark-mode .bg-blue-50 { background-color: #162846 !important; }
+  body.dark-mode .bg-emerald-50 { background-color: #12352f !important; }
+  body.dark-mode .bg-indigo-50 { background-color: #22284f !important; }
+  body.dark-mode .bg-yellow-50 { background-color: #3a2f12 !important; }
+  body.dark-mode .bg-amber-50 {
+    background-color: #33260d !important;
+    color: #fde68a !important;
+  }
+  body.dark-mode .bg-pink-50 { background-color: #3a1831 !important; }
+  body.dark-mode .bg-purple-50 { background-color: #2d1b43 !important; }
+  body.dark-mode .text-gray-400 { color: #94a3b8 !important; }
+  body.dark-mode .text-gray-500,
+  body.dark-mode .text-gray-600,
+  body.dark-mode .text-gray-700,
+  body.dark-mode .text-slate-600,
+  body.dark-mode .text-slate-700 { color: #cbd5e1 !important; }
+  body.dark-mode .text-gray-900,
+  body.dark-mode .text-pink-900,
+  body.dark-mode .text-purple-900,
+  body.dark-mode .text-blue-900 { color: #e5e7eb !important; }
+  body.dark-mode input,
+  body.dark-mode textarea,
+  body.dark-mode select,
+  body.dark-mode pre {
+    background-color: #0b1220 !important;
+    color: #e5e7eb !important;
+    border-color: #334155 !important;
+  }
+  body.dark-mode input::placeholder,
+  body.dark-mode textarea::placeholder { color: #64748b !important; }
+  body.dark-mode .border,
+  body.dark-mode .border-gray-100,
+  body.dark-mode .border-gray-200,
+  body.dark-mode .border-gray-300,
+  body.dark-mode .border-slate-100,
+  body.dark-mode .border-blue-200,
+  body.dark-mode .border-emerald-100,
+  body.dark-mode .border-indigo-100,
+  body.dark-mode .border-pink-200,
+  body.dark-mode .border-purple-200,
+  body.dark-mode .border-yellow-200 { border-color: #334155 !important; }
+  body.dark-mode .shadow,
+  body.dark-mode .shadow-xl { box-shadow: 0 8px 24px rgba(0,0,0,.35) !important; }
+  body.dark-mode .hover\:bg-gray-50:hover,
+  body.dark-mode .hover\:bg-gray-100:hover,
+  body.dark-mode .hover\:bg-gray-200:hover,
+  body.dark-mode .hover\:bg-slate-100:hover { background-color: #475569 !important; color: #f8fafc !important; }
+  body.dark-mode .hover\:bg-gray-300:hover { background-color: #64748b !important; color: #fff !important; }
+  body.dark-mode .hover\:bg-amber-100:hover { background-color: #4a3510 !important; }
+  body.dark-mode .border-amber-400 { border-color: #b45309 !important; }
+  body.dark-mode .ring-amber-200 { --tw-ring-color: rgba(180, 83, 9, .45) !important; }
+  body.dark-mode button[data-star-output] {
+    background-color: rgba(15, 23, 42, .94) !important;
+    border-color: transparent !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,.45) !important;
+  }
+  body.dark-mode button[data-star-output]:hover {
+    background-color: rgba(51, 65, 85, .95) !important;
+    border-color: transparent !important;
+  }
+  body.dark-mode button[data-star-output][data-starred="0"] {
+    color: #fff !important;
+    font-weight: 800 !important;
+    text-shadow: 0 1px 2px rgba(0,0,0,.95);
+  }
+  body.dark-mode button[data-star-output][data-starred="1"] {
+    text-shadow: 0 1px 2px rgba(0,0,0,.75);
+  }
+  body.dark-mode #character-search-status {
+    color: #93c5fd !important;
+  }
+  body.dark-mode #character-search-results > div {
+    background-color: #111827 !important;
+    border-color: #1e40af !important;
+  }
+  body.dark-mode #character-search-results .character-preview {
+    background-color: #0b1220 !important;
+    border-color: #334155 !important;
+  }
+  body.dark-mode #character-search-results .text-blue-900 {
+    color: #bfdbfe !important;
+  }
+  body.dark-mode #character-search-results .text-gray-700 {
+    color: #d1d5db !important;
+  }
+  body.dark-mode #thumbnail-queue-status {
+    background-color: #052e2b !important;
+    border-color: #14b8a6 !important;
+    color: #ccfbf1 !important;
+  }
+  #btn-privacy-mask {
+    position: fixed;
+    right: max(14px, env(safe-area-inset-right));
+    bottom: max(14px, env(safe-area-inset-bottom));
+    z-index: 70;
+    box-shadow: 0 10px 24px rgba(15,23,42,.22);
+    font-size: 15px;
+    padding: 10px 16px;
+  }
+  @media (max-width: 640px) {
+    #btn-privacy-mask {
+      right: max(10px, env(safe-area-inset-right));
+      bottom: max(10px, env(safe-area-inset-bottom));
+      font-size: 12px;
+      padding: 6px 10px;
+    }
+  }
+  .output-highlight {
+    outline: 3px solid #38bdf8;
+    outline-offset: 3px;
+    border-radius: 8px;
+    animation: outputFlash 1.2s ease-in-out 2;
+  }
+  @keyframes outputFlash {
+    0%, 100% { box-shadow: 0 0 0 rgba(56,189,248,0); }
+    50% { box-shadow: 0 0 0 8px rgba(56,189,248,.25); }
+  }
 </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -91,6 +247,10 @@
   <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
     <h1 class="text-2xl font-bold">🎨 ComfyUI 网页控制台</h1>
     <div class="flex items-center gap-3 flex-wrap">
+      <button id="btn-dark-mode" type="button"
+        class="text-sm px-2 py-1 rounded border border-gray-300 bg-gray-100 text-gray-700 hover:bg-gray-200">
+        深色模式
+      </button>
       <button id="btn-privacy-mask" type="button"
         class="text-sm px-2 py-1 rounded border border-gray-300 bg-gray-100 text-gray-700 hover:bg-gray-200">
         遮罩图片
@@ -136,9 +296,16 @@
 
   <!-- 工作流列表 -->
   <div class="bg-white rounded shadow p-4 mb-4">
-    <h2 class="text-lg font-semibold mb-2">📋 工作流列表</h2>
+    <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
+      <h2 class="text-lg font-semibold">📋 工作流列表</h2>
+      <button id="btn-generate-thumbnails" type="button"
+        class="text-xs px-3 py-1 bg-emerald-100 text-emerald-800 rounded hover:bg-emerald-200">
+        生成缺失缩略图
+      </button>
+    </div>
     <input id="search" type="text" placeholder="搜索关键词..."
       class="w-full border rounded px-2 py-1 mb-2 text-sm" />
+    <div id="thumbnail-queue-status" class="hidden mb-2 text-xs bg-emerald-50 border border-emerald-100 text-emerald-900 rounded p-2"></div>
     <div id="wf-list" class="max-h-[32rem] overflow-y-auto"></div>
   </div>
 
@@ -168,6 +335,15 @@
       <a href="https://www.downloadmost.com/NoobAI-XL/danbooru-character/"
          target="_blank" rel="noopener"
          class="underline hover:text-blue-700">danbooru-character 角色库</a>。
+      <div class="mt-2 flex flex-col sm:flex-row gap-2">
+        <input id="character-search-input" type="search"
+          class="min-w-0 flex-1 border border-blue-200 rounded px-2 py-1 bg-white text-gray-900"
+          placeholder="输入角色中文名或英文名" />
+        <button id="btn-character-search" type="button"
+          class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 shrink-0">查角色词条</button>
+      </div>
+      <div id="character-search-status" class="mt-1 text-blue-700"></div>
+      <div id="character-search-results" class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
     </div>
 
     <label class="block text-sm font-medium mb-1">直接 Tag (-d)</label>
@@ -182,16 +358,17 @@
       <label class="flex items-center gap-1">
         <span>LLM 处理</span>
         <select id="llm-mode" class="border rounded px-2 py-1 text-xs">
-          <option value="rewrite" selected>改写</option>
-          <option value="translate">翻译追加</option>
-          <option value="expand">联想</option>
+          <option value="rewrite">改写</option>
+          <option value="translate">翻译</option>
+          <option value="expand" selected>联想</option>
+          <option value="brainstorm">脑洞</option>
         </select>
       </label>
       <label class="flex items-center gap-1"><input type="checkbox" id="override" /> 覆写模式</label>
     </div>
     <p class="text-xs text-gray-500 mb-3">
       改写：让 LLM 基于「直接 Tag」（或工作流内置 prompt）作为底本，结合「自然语言描述」整体重写。<br>
-      翻译追加：把自然语言翻译成 tag 后拼接到底本之后。联想：按自然语言方向扩展相关 tag 后拼接到底本之后。<br>
+      翻译：把自然语言翻译成 tag 后拼接到底本之后。联想：按自然语言方向扩展相关 tag 后拼接到底本之后。脑洞：用几个主题词发散成完整画面 tag。<br>
       <span class="text-orange-600">覆写模式：完全忽略工作流内置 prompt，最终只用你的输入（直接 Tag + LLM 输出）。</span>
     </p>
 
@@ -207,22 +384,30 @@
     <div class="flex flex-wrap gap-2 items-end mb-2 text-sm">
       <div>
         <label class="block text-xs text-gray-500 mb-0.5">宽 width</label>
-        <input id="width" type="number" min="64" step="8" placeholder="默认"
+        <input id="width" type="number" min="64" step="8" value="1024" placeholder="1024"
           class="w-28 border rounded px-2 py-1" />
       </div>
       <div>
         <label class="block text-xs text-gray-500 mb-0.5">高 height</label>
-        <input id="height" type="number" min="64" step="8" placeholder="默认"
+        <input id="height" type="number" min="64" step="8" value="1344" placeholder="1344"
           class="w-28 border rounded px-2 py-1" />
       </div>
       <button id="btn-reset-res" type="button"
         class="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-xs">恢复默认</button>
       <span id="default-res" class="text-xs text-gray-500 w-full sm:w-auto order-last sm:order-none"></span>
-      <div class="w-full sm:w-auto sm:ml-auto flex items-center justify-end gap-1">
-        <label for="batch" class="block text-xs text-gray-500">批量</label>
+      <div class="w-full sm:w-auto sm:ml-auto flex items-center justify-end gap-2 rounded border border-gray-200 bg-gray-50 px-2 py-1">
+        <label for="batch" class="text-xs text-gray-500 whitespace-nowrap">批量</label>
         <input id="batch" type="number" min="1" max="50" value="1"
-          class="w-16 shrink-0 border rounded px-2 py-1" />
+          class="w-14 shrink-0 border rounded px-2 py-1 text-sm bg-white" />
         <span class="text-xs text-gray-400">张</span>
+        <label for="steps" class="ml-2 text-xs text-gray-500 whitespace-nowrap">步数</label>
+        <input id="steps" type="number" min="1" max="200" step="1" placeholder="默认"
+          class="w-16 shrink-0 border rounded px-2 py-1 text-sm bg-white" />
+        <label class="ml-1 flex items-center gap-1 text-xs text-gray-600 whitespace-nowrap"
+          title="批量大于 1 且填写自然语言描述时，每张图提交前都重新调用一次 LLM。会更慢。">
+          <input type="checkbox" id="rerun-llm-each-batch" class="h-3.5 w-3.5" />
+          逐张 LLM
+        </label>
       </div>
     </div>
     <div class="flex flex-wrap gap-2 mb-3 text-xs" id="res-presets">
@@ -293,6 +478,19 @@
     <div id="hist-list" class="space-y-2 max-h-96 overflow-y-auto"></div>
   </div>
 
+  <!-- 精选输出图片 -->
+  <div class="bg-white rounded shadow p-4 mb-4">
+    <div class="flex items-center justify-between mb-2">
+      <h2 class="text-lg font-semibold">⭐ 精选生成图片
+        <span class="text-xs text-gray-500 font-normal">(<span id="featured-total">0</span>)</span>
+      </h2>
+      <button id="btn-reload-featured"
+        class="text-xs px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">重载</button>
+    </div>
+    <div id="featured-empty" class="text-xs text-gray-400">暂无精选</div>
+    <div id="featured-gallery" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2"></div>
+  </div>
+
   <!-- 全部输出图片 -->
   <div class="bg-white rounded shadow p-4 mb-4">
     <div class="flex items-center justify-between mb-2">
@@ -317,6 +515,9 @@ let allWorkflows = [];
 let defaultRes = {w: null, h: null};
 const history = [];  // {url, filename, prompt, time}
 const PRIVACY_MASK_KEY = 'privacyMaskEnabledV1';
+const DARK_MODE_KEY = 'darkModeModeV1';
+const DEFAULT_WIDTH = 1024;
+const DEFAULT_HEIGHT = 1344;
 
 function setPrivacyMask(enabled) {
   document.body.classList.toggle('privacy-mask', enabled);
@@ -338,15 +539,130 @@ function initPrivacyMask() {
   });
 }
 
+function getSystemDarkMode() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+}
+function resolveDarkMode(mode) {
+  return mode === 'dark' || (mode === 'system' && getSystemDarkMode());
+}
+function setDarkMode(mode) {
+  mode = ['system', 'dark', 'light'].includes(mode) ? mode : 'system';
+  const enabled = resolveDarkMode(mode);
+  document.body.classList.toggle('dark-mode', enabled);
+  try { localStorage.setItem(DARK_MODE_KEY, mode); } catch {}
+  const btn = $('btn-dark-mode');
+  if (!btn) return;
+  btn.textContent = mode === 'system' ? '跟随系统' : (mode === 'dark' ? '深色模式' : '浅色模式');
+  btn.title = '点击切换：跟随系统 / 深色 / 浅色';
+  btn.className = enabled
+    ? 'text-sm px-2 py-1 rounded border border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600'
+    : 'text-sm px-2 py-1 rounded border border-gray-300 bg-gray-100 text-gray-700 hover:bg-gray-200';
+  btn.dataset.mode = mode;
+}
+
+function initDarkMode() {
+  let mode = 'system';
+  try {
+    const saved = localStorage.getItem(DARK_MODE_KEY);
+    if (['system', 'dark', 'light'].includes(saved)) mode = saved;
+    else if (saved === '1') mode = 'dark';
+    else if (saved === '0') mode = 'light';
+  } catch {}
+  setDarkMode(mode);
+  $('btn-dark-mode').addEventListener('click', () => {
+    const current = $('btn-dark-mode').dataset.mode || 'system';
+    const next = current === 'system' ? 'dark' : (current === 'dark' ? 'light' : 'system');
+    setDarkMode(next);
+  });
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (($('btn-dark-mode').dataset.mode || 'system') === 'system') setDarkMode('system');
+    });
+  }
+}
+
+function resetResolutionInputs() {
+  $('width').value = DEFAULT_WIDTH;
+  $('height').value = DEFAULT_HEIGHT;
+}
+
 function renderHistory() {
   // 已替换为 ComfyUI output 目录浏览，不再渲染会话内历史
+}
+
+let thumbnailWS = null;
+function setThumbnailStatus(text, show = true) {
+  const box = $('thumbnail-queue-status');
+  box.textContent = text || '';
+  box.classList.toggle('hidden', !show);
+}
+function applyThumbnailEvent(m) {
+  if (!m || !String(m.type || '').startsWith('thumb_')) return false;
+  const btn = $('btn-generate-thumbnails');
+  if (m.type === 'thumb_start') {
+    setThumbnailStatus(m.total ? `发现 ${m.total} 个缺失缩略图，开始生成...` : '没有缺失缩略图。');
+    btn.disabled = false;
+    btn.textContent = m.total ? '停止生成' : '生成缺失缩略图';
+    if (!m.total) loadList();
+  } else if (m.type === 'thumb_item') {
+    setThumbnailStatus(`生成缩略图 ${m.index}/${m.total}：${m.path}`);
+    btn.disabled = false;
+    btn.textContent = '停止生成';
+  } else if (m.type === 'thumb_saved') {
+    setThumbnailStatus(`已保存 ${m.index}/${m.total}：${m.path}`);
+    loadList();
+  } else if (m.type === 'thumb_failed') {
+    setThumbnailStatus(`失败 ${m.index}/${m.total}：${m.path}，${m.message}`);
+  } else if (m.type === 'thumb_done') {
+    setThumbnailStatus(`缩略图生成完成：成功 ${m.generated}，失败 ${m.failed}`);
+    btn.disabled = false;
+    btn.textContent = '生成缺失缩略图';
+    loadList();
+  } else if (m.type === 'thumb_cancelled') {
+    setThumbnailStatus(`缩略图生成已停止：已成功 ${m.generated}，失败 ${m.failed}`);
+    btn.disabled = false;
+    btn.textContent = '生成缺失缩略图';
+    loadList();
+  } else if (m.type === 'thumb_error') {
+    setThumbnailStatus(`缩略图生成失败：${m.message}`);
+    btn.disabled = false;
+    btn.textContent = '生成缺失缩略图';
+  }
+  return true;
+}
+function startThumbnailQueue() {
+  if (thumbnailWS) {
+    fetch('/api/interrupt', {method: 'POST'}).catch(() => {});
+    setThumbnailStatus('正在停止缩略图生成...');
+    return;
+  }
+  if (!confirm('为所有缺失缩略图的工作流排队生成 1024×1024 缩略图？会使用工作流内置 prompt 和步数，可能耗时较久。')) return;
+  const btn = $('btn-generate-thumbnails');
+  btn.disabled = false;
+  btn.textContent = '停止生成';
+  setThumbnailStatus('连接缩略图生成队列...');
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws/thumbnails`);
+  thumbnailWS = ws;
+  ws.onmessage = (e) => {
+    applyThumbnailEvent(JSON.parse(e.data));
+  };
+  ws.onclose = () => {
+    thumbnailWS = null;
+    btn.disabled = false;
+    if (btn.textContent === '停止生成') btn.textContent = '生成缺失缩略图';
+  };
+  ws.onerror = () => {
+    setThumbnailStatus('缩略图生成 WebSocket 错误');
+    try { ws.close(); } catch {}
+  };
 }
 
 function pushHistory(item) {
   history.unshift(item);
   // 新生成的图：插入到 gallery 顶部并刷新计数
-  if (item && item.filename) {
-    prependGalleryItem(item.filename);
+  if (item && (item.path || item.filename)) {
+    prependGalleryItem(item.path || item.filename);
   }
 }
 
@@ -387,7 +703,7 @@ function pushPromptHistory(payload) {
   // 去重：连续两次完全一样就不再加
   const last = arr[0];
   if (last) {
-    const sameKeys = ['workflow_path','direct_prompt','nl_prompt','llm_mode','override','width','height','batch'];
+    const sameKeys = ['workflow_path','direct_prompt','nl_prompt','llm_mode','override','width','height','steps','batch','rerun_llm_each_batch','batch_round','batch_total'];
     const same = sameKeys.every(k => (last[k] ?? null) === (item[k] ?? null));
     if (same) { return last.ts; }
   }
@@ -395,6 +711,21 @@ function pushPromptHistory(payload) {
   saveHist(arr);
   renderHist();
   return item.ts;
+}
+function ensureRoundPromptHistory(round, seed = {}) {
+  if (!activeRunPayload) return activeHistoryTs;
+  const key = Number(round) || 1;
+  if (activeRoundHistoryTs.has(key)) return activeRoundHistoryTs.get(key);
+  const payload = {
+    ...activeRunPayload,
+    batch_round: key,
+    batch_total: activeRunPayload.batch,
+    batch: 1,
+    ...seed,
+  };
+  const ts = pushPromptHistory(payload);
+  activeRoundHistoryTs.set(key, ts);
+  return ts;
 }
 function updatePromptHistoryFinalPrompt(ts, finalPrompt) {
   if (!ts || !finalPrompt) return;
@@ -405,19 +736,174 @@ function updatePromptHistoryFinalPrompt(ts, finalPrompt) {
   saveHist(arr);
   renderHist();
 }
+function updatePromptHistoryLlmOutput(ts, llmOutput) {
+  if (!ts || !llmOutput) return;
+  const arr = loadHist();
+  const idx = arr.findIndex(it => it.ts === ts);
+  if (idx < 0) return;
+  const outputs = getHistLlmOutputs(arr[idx]);
+  outputs.push(llmOutput);
+  arr[idx] = { ...arr[idx], llm_output: outputs[0] || '', llm_outputs: outputs };
+  saveHist(arr);
+  renderHist();
+}
+function getHistLlmOutputs(it) {
+  const out = [];
+  if (Array.isArray(it.llm_outputs)) {
+    for (const p of it.llm_outputs) {
+      if (p) out.push(p);
+    }
+  }
+  if (it.llm_output && !out.length) out.push(it.llm_output);
+  return out;
+}
 function updatePromptHistoryImage(ts, imagePath) {
   if (!ts || !imagePath) return;
   const arr = loadHist();
   const idx = arr.findIndex(it => it.ts === ts);
-  if (idx < 0 || arr[idx].image_path) return;
-  arr[idx] = { ...arr[idx], image_path: imagePath };
+  if (idx < 0) return;
+  const paths = getHistImagePaths(arr[idx]);
+  if (paths.includes(imagePath)) return;
+  const nextPaths = [...paths, imagePath];
+  arr[idx] = { ...arr[idx], image_path: nextPaths[0] || '', image_paths: nextPaths };
   saveHist(arr);
+  renderHist();
+}
+function getHistImagePaths(it) {
+  const out = [];
+  if (Array.isArray(it.image_paths)) {
+    for (const p of it.image_paths) {
+      if (p && !out.includes(p)) out.push(p);
+    }
+  }
+  if (it.image_path && !out.includes(it.image_path)) out.push(it.image_path);
+  return out;
+}
+function removeImageFromPromptHistory(imagePath) {
+  if (!imagePath) return;
+  const arr = loadHist();
+  let changed = false;
+  const next = arr.map(it => {
+    const paths = getHistImagePaths(it);
+    if (!paths.includes(imagePath)) return it;
+    const remaining = paths.filter(p => p !== imagePath);
+    changed = true;
+    const item = { ...it, image_paths: remaining };
+    if (remaining.length) item.image_path = remaining[0];
+    else {
+      delete item.image_path;
+      item._delete_after_image_removal = true;
+    }
+    if ((item.batch || 1) > 1) item.batch = Math.max(1, remaining.length || 1);
+    return item;
+  }).filter(it => !it._delete_after_image_removal);
+  if (!changed) return;
+  saveHist(next);
   renderHist();
 }
 function escHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
   }[c]));
+}
+function appendDirectTags(tags) {
+  const text = String(tags || '').trim();
+  if (!text) return;
+  const el = $('direct');
+  const old = el.value.trim();
+  el.value = old ? `${old}, ${text}` : text;
+  el.focus();
+}
+function renderCharacterSearchResults(data) {
+  const status = $('character-search-status');
+  const box = $('character-search-results');
+  const candidates = (data.candidates || []).join(' / ');
+  if (!data.items || !data.items.length) {
+    status.textContent = candidates
+      ? `没有搜到角色。LLM 尝试过：${candidates}`
+      : '没有搜到角色。';
+    box.innerHTML = '';
+    return;
+  }
+  const ambiguous = data.items.length > 1;
+  status.textContent = ambiguous
+    ? `找到 ${data.items.length} 个候选，请按预览图和作品 tag 选择。LLM 候选：${candidates}`
+    : `找到 1 个候选。LLM 候选：${candidates}`;
+  box.innerHTML = data.items.map((it, idx) => {
+    const prompt = it.prompt || '';
+    const img = it.preview_url || '';
+    const source = it.source_url || 'https://www.downloadmost.com/NoobAI-XL/danbooru-character/';
+    return `<div class="border border-blue-200 rounded bg-white/80 p-2 text-xs">
+      <div class="flex gap-2">
+        <a href="${escHtml(source)}" target="_blank" rel="noopener"
+          class="character-preview block w-24 h-24 rounded border bg-gray-100 overflow-hidden shrink-0">
+          ${img ? `<img src="${escHtml(img)}" loading="lazy" decoding="async" class="w-full h-full object-cover" />` : ''}
+        </a>
+        <div class="min-w-0 flex-1">
+          <div class="font-semibold text-blue-900 break-words">${escHtml(it.character || '')}</div>
+          <div class="mt-1 font-mono text-gray-700 break-words line-clamp-4">${escHtml(prompt)}</div>
+        </div>
+      </div>
+      <div class="mt-2 flex gap-2 flex-wrap">
+        <button type="button" data-character-use="${idx}"
+          class="px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700">填入直接 Tag</button>
+        <button type="button" data-character-appearance="${idx}"
+          class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded hover:bg-emerald-200">只填外貌</button>
+        <button type="button" data-character-copy="${idx}"
+          class="px-2 py-0.5 bg-gray-200 rounded hover:bg-gray-300">复制</button>
+      </div>
+    </div>`;
+  }).join('');
+  box.dataset.items = JSON.stringify(data.items || []);
+}
+async function searchCharacterTags() {
+  const query = $('character-search-input').value.trim();
+  if (!query) return;
+  const btn = $('btn-character-search');
+  btn.disabled = true;
+  btn.textContent = '搜索中...';
+  $('character-search-status').textContent = 'LLM 翻译角色名并搜索角色库中...';
+  $('character-search-results').innerHTML = '';
+  try {
+    const r = await fetch('/api/character/search', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({query}),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '搜索失败');
+    renderCharacterSearchResults(d);
+  } catch (err) {
+    $('character-search-status').textContent = '搜索失败: ' + (err.message || err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '查角色词条';
+  }
+}
+async function fillCharacterAppearanceTags(prompt, btn) {
+  if (!prompt) return;
+  const oldText = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '处理中...';
+  }
+  try {
+    const r = await fetch('/api/character/appearance-tags', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({prompt}),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '处理失败');
+    appendDirectTags(d.text || '');
+  } catch (err) {
+    alert('去除服装 tag 失败: ' + (err.message || err));
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText || '只填外貌';
+    }
+  }
 }
 function normalizePromptForMatch(s) {
   return String(s || '').replace(/\s+/g, ' ').trim();
@@ -429,7 +915,7 @@ function getHistLlmMode(it) {
   return 'direct';
 }
 function histPreviewHTML(it) {
-  const path = it.image_path || '';
+  const path = getHistImagePaths(it)[0] || '';
   if (!path) {
     return '<div class="hist-preview w-20 h-20 shrink-0 rounded border bg-gray-100 text-gray-400 flex items-center justify-center text-[11px] text-center px-1">图片已删除</div>';
   }
@@ -450,7 +936,7 @@ function renderHist() {
   $('hist-count').textContent = all.length;
   const q = ($('hist-search').value || '').toLowerCase().trim();
   const filtered = q
-    ? all.filter(it => [it.workflow_path, it.direct_prompt, it.nl_prompt, it.final_prompt]
+    ? all.filter(it => [it.workflow_path, it.direct_prompt, it.nl_prompt, getHistLlmOutputs(it).join('\n'), it.final_prompt]
         .some(s => (s||'').toLowerCase().includes(q)))
     : all;
   if (!filtered.length) {
@@ -473,11 +959,20 @@ function renderHist() {
       const llmMode = getHistLlmMode(it);
       if (llmMode === 'rewrite') opts.push('改写');
       else if (llmMode === 'expand') opts.push('联想');
+      else if (llmMode === 'brainstorm') opts.push('脑洞');
       else if (llmMode === 'translate') opts.push('翻译');
       else opts.push('直出');
       if (it.override || it.drop_builtin) opts.push('覆写');
+      if (it.rerun_llm_each_batch) opts.push('逐张LLM');
+      if (it.batch_round && it.batch_total) opts.push(`${it.batch_round}/${it.batch_total}`);
       if ((it.batch||1) > 1) opts.push(`批量×${it.batch}`);
       const res = (it.width && it.height) ? `${it.width}×${it.height}` : '默认尺寸';
+      const stepText = it.steps ? `${it.steps}步` : '';
+      const llmOutputs = getHistLlmOutputs(it);
+      const imagePaths = getHistImagePaths(it);
+      const llmOutputHtml = llmOutputs.length
+        ? `<div class="mt-1 font-mono text-indigo-800 bg-indigo-50 border border-indigo-100 rounded p-1 break-words"><span class="text-indigo-600">LLM:</span> ${escHtml(llmOutputs.join('\\n\\n'))}</div>`
+        : '';
       return `<div class="border rounded p-2 text-xs hover:bg-gray-50 flex gap-2 items-start">
         ${histPreviewHTML(it)}
         <div class="min-w-0 flex-1">
@@ -487,15 +982,19 @@ function renderHist() {
           <div class="flex flex-wrap gap-1 mb-1">
             ${opts.map(o => `<span class="px-1.5 bg-blue-100 text-blue-700 rounded">${o}</span>`).join('')}
             <span class="px-1.5 bg-gray-100 text-gray-600 rounded">${res}</span>
+            ${stepText ? `<span class="px-1.5 bg-gray-100 text-gray-600 rounded">${stepText}</span>` : ''}
           </div>
           ${it.direct_prompt ? `<div class="font-mono text-gray-700 break-words"><span class="text-gray-400">D:</span> ${escHtml(it.direct_prompt)}</div>` : ''}
           ${it.nl_prompt ? `<div class="text-gray-700 break-words"><span class="text-gray-400">N:</span> ${escHtml(it.nl_prompt)}</div>` : ''}
+          ${llmOutputHtml}
           ${it.final_prompt ? `<div class="mt-1 font-mono text-emerald-800 bg-emerald-50 border border-emerald-100 rounded p-1 break-words"><span class="text-emerald-600">最终:</span> ${escHtml(it.final_prompt)}</div>` : ''}
           <div class="mt-1 flex gap-2 flex-wrap">
             <button data-act="apply" data-idx="${realIdx}" class="px-2 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600">填回表单</button>
             <button data-act="copy-d" data-idx="${realIdx}" class="px-2 py-0.5 bg-gray-200 rounded hover:bg-gray-300">复制 D</button>
             <button data-act="copy-n" data-idx="${realIdx}" class="px-2 py-0.5 bg-gray-200 rounded hover:bg-gray-300">复制 N</button>
+            ${llmOutputs.length ? `<button data-act="copy-llm" data-idx="${realIdx}" class="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded hover:bg-indigo-200">复制 LLM</button>` : ''}
             ${it.final_prompt ? `<button data-act="fill-final" data-idx="${realIdx}" class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded hover:bg-emerald-200">填回最终</button>` : ''}
+            ${imagePaths.length ? `<button data-act="jump-image" data-idx="${realIdx}" class="px-2 py-0.5 bg-sky-100 text-sky-800 rounded hover:bg-sky-200">跳转图片</button>` : ''}
             <button data-act="del" data-idx="${realIdx}" class="px-2 py-0.5 bg-red-100 text-red-700 rounded hover:bg-red-200 sm:ml-auto">删除</button>
           </div>
         </div>
@@ -523,10 +1022,41 @@ function applyHistItem(it) {
   $('override').checked = !!(it.override || it.drop_builtin);
   $('width').value = it.width || '';
   $('height').value = it.height || '';
+  $('steps').value = it.steps || '';
   $('batch').value = it.batch || 1;
+  $('rerun-llm-each-batch').checked = !!it.rerun_llm_each_batch;
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
-$('hist-list').addEventListener('click', (e) => {
+async function jumpToHistoryImage(it) {
+  const paths = getHistImagePaths(it);
+  if (!paths.length) return;
+  let target = null;
+  for (const path of paths) {
+    target = document.querySelector(`#gallery [data-output-path="${CSS.escape(path)}"]`);
+    if (target) break;
+  }
+  while (!target && galleryState.loaded < galleryState.total) {
+    await loadGallery(false);
+    for (const path of paths) {
+      target = document.querySelector(`#gallery [data-output-path="${CSS.escape(path)}"]`);
+      if (target) break;
+    }
+  }
+  if (!target) {
+    for (const path of paths) {
+      target = document.querySelector(`#images [data-output-path="${CSS.escape(path)}"]`);
+      if (target) break;
+    }
+    if (!target) {
+      alert('对应图片不在当前图库里，可能已删除或尚未加载。');
+      return;
+    }
+  }
+  target.scrollIntoView({behavior: 'smooth', block: 'center'});
+  target.classList.add('output-highlight');
+  setTimeout(() => target.classList.remove('output-highlight'), 2600);
+}
+$('hist-list').addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-act]');
   if (!btn) return;
   const act = btn.dataset.act;
@@ -553,6 +1083,7 @@ $('hist-list').addEventListener('click', (e) => {
   if (act === 'apply') applyHistItem(it);
   else if (act === 'copy-d') navigator.clipboard.writeText(it.direct_prompt || '');
   else if (act === 'copy-n') navigator.clipboard.writeText(it.nl_prompt || '');
+  else if (act === 'copy-llm') navigator.clipboard.writeText(getHistLlmOutputs(it).join('\n\n'));
   else if (act === 'fill-final') {
     $('direct').value = it.final_prompt || '';
     $('nl').value = '';
@@ -560,9 +1091,22 @@ $('hist-list').addEventListener('click', (e) => {
     $('override').checked = true;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
+  else if (act === 'jump-image') {
+    await jumpToHistoryImage(it);
+  }
   else if (act === 'del') {
-    arr.splice(idx, 1);
-    saveHist(arr);
+    const imagePaths = getHistImagePaths(it);
+    const decision = await askDeleteHistoryImages(imagePaths);
+    if (decision.action === 'cancel') return;
+    if (decision.action === 'delete-images') {
+      for (const path of imagePaths) {
+        await deleteOutputImageFileOnly(path);
+      }
+    }
+    const latest = loadHist();
+    const latestIdx = latest.findIndex(row => row.ts === it.ts);
+    if (latestIdx >= 0) latest.splice(latestIdx, 1);
+    saveHist(latest);
     renderHist();
   }
 });
@@ -585,7 +1129,7 @@ async function migratePromptHistoryImagesOnce() {
   try {
     if (localStorage.getItem(HIST_IMAGE_MIGRATION_KEY) === '1') return;
     const arr = loadHist();
-    const needsImage = arr.filter(it => it.final_prompt && !it.image_path);
+    const needsImage = arr.filter(it => it.final_prompt && !getHistImagePaths(it).length);
     if (!needsImage.length) {
       localStorage.setItem(HIST_IMAGE_MIGRATION_KEY, '1');
       return;
@@ -607,11 +1151,11 @@ async function migratePromptHistoryImagesOnce() {
 
     let changed = false;
     const next = arr.map(it => {
-      if (it.image_path || !it.final_prompt) return it;
+      if (getHistImagePaths(it).length || !it.final_prompt) return it;
       const imagePath = promptToImage.get(normalizePromptForMatch(it.final_prompt));
       if (!imagePath) return it;
       changed = true;
-      return { ...it, image_path: imagePath };
+      return { ...it, image_path: imagePath, image_paths: [imagePath] };
     });
     if (changed) saveHist(next);
     localStorage.setItem(HIST_IMAGE_MIGRATION_KEY, '1');
@@ -628,18 +1172,87 @@ const galleryState = {
   loaded: 0,
   pageSize: 5,
 };
+let featuredPaths = new Set();
 
-function galleryItemHTML(relPath) {
+function outputImageCardHTML(relPath, options = {}) {
   const url = '/api/output/file?path=' + encodeURIComponent(relPath);
   const safe = relPath.replace(/"/g, '&quot;');
-  return `<a href="${url}" data-gallery="main"
-    data-title="${safe}"
-    data-description="loading-prompt"
-    data-rel-path="${safe}"
-    title="${safe}" class="glightbox block">
-    <img src="${url}" loading="lazy" decoding="async"
-      class="w-full aspect-square object-cover rounded border bg-gray-50 hover:ring-2 hover:ring-blue-400" />
-  </a>`;
+  const starred = featuredPaths.has(relPath);
+  const gallery = options.gallery || 'main';
+  return `<div class="relative group" data-output-path="${safe}">
+    <a href="${url}" data-gallery="${gallery}"
+      data-title="${safe}"
+      data-description="loading-prompt"
+      data-rel-path="${safe}"
+      title="${safe}" class="glightbox block rounded border overflow-hidden">
+      <img src="${url}" loading="lazy" decoding="async"
+        class="w-full aspect-square object-cover bg-gray-50 hover:ring-2 hover:ring-blue-400" />
+    </a>
+    <button type="button" data-star-output="${safe}" data-starred="${starred ? '1' : '0'}"
+      class="absolute right-1 top-1 z-10 h-7 w-7 rounded-full border text-sm shadow bg-white/85 hover:bg-yellow-100 ${starred ? 'text-yellow-500 border-yellow-300' : 'text-gray-400 border-white/70'}"
+      title="${starred ? '取消精选' : '加入精选'}">★</button>
+    <button type="button" data-delete-output="${safe}"
+      class="absolute right-1 bottom-1 z-10 h-7 w-7 rounded-full border border-red-200 bg-red-50/90 text-xs font-bold text-red-700 shadow hover:bg-red-100"
+      title="删除图片">X</button>
+  </div>`;
+}
+
+function galleryItemHTML(relPath) {
+  return outputImageCardHTML(relPath, {gallery: 'main'});
+}
+
+async function loadFeatured() {
+  const r = await fetch('/api/output/featured');
+  const d = await r.json();
+  const paths = (d.items || []).map(it => it.path).filter(Boolean);
+  featuredPaths = new Set(paths);
+  $('featured-total').textContent = paths.length;
+  $('featured-empty').classList.toggle('hidden', paths.length > 0);
+  $('featured-gallery').innerHTML = paths.map(path => outputImageCardHTML(path, {gallery: 'featured'})).join('');
+  refreshStarButtons();
+  refreshLightbox();
+}
+
+function refreshStarButtons() {
+  document.querySelectorAll('button[data-star-output]').forEach(btn => {
+    const path = btn.dataset.starOutput || '';
+    const starred = featuredPaths.has(path);
+    btn.textContent = '★';
+    btn.title = starred ? '取消精选' : '加入精选';
+    btn.dataset.starred = starred ? '1' : '0';
+    btn.className = `absolute right-1 top-1 z-10 h-7 w-7 rounded-full border text-sm shadow bg-white/85 hover:bg-yellow-100 ${starred ? 'text-yellow-500 border-yellow-300' : 'text-gray-400 border-white/70'}`;
+  });
+}
+
+async function toggleFeatured(relPath) {
+  if (!relPath) return;
+  const starred = featuredPaths.has(relPath);
+  const url = '/api/output/featured' + (starred ? '?path=' + encodeURIComponent(relPath) : '');
+  const res = await fetch(url, {
+    method: starred ? 'DELETE' : 'POST',
+    headers: starred ? undefined : {'Content-Type': 'application/json'},
+    body: starred ? undefined : JSON.stringify({path: relPath}),
+  });
+  if (!res.ok) {
+    alert(starred ? '取消精选失败' : '加入精选失败');
+    return;
+  }
+  if (starred) {
+    featuredPaths.delete(relPath);
+    $('featured-total').textContent = featuredPaths.size;
+    refreshStarButtons();
+    return;
+  }
+  featuredPaths.add(relPath);
+  if (!$('featured-gallery').querySelector(`[data-output-path="${CSS.escape(relPath)}"]`)) {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = outputImageCardHTML(relPath, {gallery: 'featured'});
+    $('featured-gallery').prepend(wrap.firstElementChild);
+  }
+  $('featured-total').textContent = featuredPaths.size;
+  $('featured-empty').classList.add('hidden');
+  refreshStarButtons();
+  refreshLightbox();
 }
 
 async function loadGallery(reset = true) {
@@ -672,7 +1285,6 @@ async function loadGallery(reset = true) {
 }
 
 function prependGalleryItem(filename) {
-  // 文件名仅是 basename，OUTPUT_DIR 直接放在根。预置到顶部即可看到。
   const wrap = document.createElement('div');
   wrap.innerHTML = galleryItemHTML(filename);
   const node = wrap.firstElementChild;
@@ -682,6 +1294,90 @@ function prependGalleryItem(filename) {
   $('gallery-shown').textContent = galleryState.loaded;
   $('gallery-total').textContent = galleryState.total;
   refreshLightbox();
+}
+
+function removeOutputImageFromPage(relPath) {
+  if (!relPath) return;
+  const galleryHad = !!document.querySelector(`#gallery [data-output-path="${CSS.escape(relPath)}"]`);
+  document.querySelectorAll('[data-output-path]').forEach(el => {
+    if (el.dataset.outputPath === relPath) el.remove();
+  });
+  document.querySelectorAll('[data-rel-path]').forEach(el => {
+    if (el.dataset.relPath === relPath) el.remove();
+  });
+  galleryState.total = Math.max(0, galleryState.total - 1);
+  if (galleryHad) galleryState.loaded = Math.max(0, galleryState.loaded - 1);
+  $('gallery-shown').textContent = galleryState.loaded;
+  $('gallery-total').textContent = galleryState.total;
+  featuredPaths.delete(relPath);
+  $('featured-total').textContent = featuredPaths.size;
+  $('featured-empty').classList.toggle('hidden', featuredPaths.size > 0);
+  refreshLightbox();
+}
+
+async function deleteOutputImage(relPath) {
+  if (!relPath) return;
+  if (!confirm(`删除这张图片？\n${relPath}`)) return;
+  const r = await fetch('/api/output/file?path=' + encodeURIComponent(relPath), {method: 'DELETE'});
+  if (!r.ok) {
+    let message = '删除失败';
+    try {
+      const d = await r.json();
+      message = d.detail || message;
+    } catch {}
+    alert(message);
+    return;
+  }
+  removeOutputImageFromPage(relPath);
+  removeImageFromPromptHistory(relPath);
+}
+
+async function deleteOutputImageFileOnly(relPath) {
+  if (!relPath) return false;
+  const r = await fetch('/api/output/file?path=' + encodeURIComponent(relPath), {method: 'DELETE'});
+  if (!r.ok && r.status !== 404) return false;
+  removeOutputImageFromPage(relPath);
+  return true;
+}
+
+function askDeleteHistoryImages(paths) {
+  if (!paths.length) return Promise.resolve({action: 'history-only', remember: false});
+  if (historyDeleteImageChoice) return Promise.resolve({action: historyDeleteImageChoice, remember: true});
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4';
+    overlay.innerHTML = `<div class="bg-white rounded shadow-xl w-full max-w-md p-4">
+      <div class="text-sm font-medium text-gray-900 mb-2">删除这条提示词历史？</div>
+      <div class="text-xs text-gray-600 mb-3">
+        这条历史关联了 ${paths.length} 张本地图片。你可以只删除历史，也可以同时删除本地图片文件。
+      </div>
+      <div class="max-h-24 overflow-y-auto text-[11px] text-gray-400 bg-gray-50 border rounded p-2 mb-3">
+        ${paths.map(p => `<div class="break-all">${escHtml(p)}</div>`).join('')}
+      </div>
+      <div class="flex items-end justify-between gap-3">
+        <label class="flex items-center gap-1 text-xs text-gray-500">
+          <input type="checkbox" data-role="remember" />
+          本轮不再提示
+        </label>
+        <div class="flex gap-2">
+          <button type="button" data-action="cancel" class="px-3 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200">取消</button>
+          <button type="button" data-action="history-only" class="px-3 py-1 text-xs bg-gray-200 rounded hover:bg-gray-300">只删历史</button>
+          <button type="button" data-action="delete-images" class="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700">同时删图</button>
+        </div>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) return;
+      const btn = e.target.closest('button[data-action]');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      const remember = !!overlay.querySelector('[data-role="remember"]')?.checked;
+      overlay.remove();
+      if (action !== 'cancel' && remember) historyDeleteImageChoice = action;
+      resolve({action, remember});
+    });
+  });
 }
 
 // 临时 fork：只在当前浏览器内存里活着，不持久化到 ComfyUI
@@ -818,6 +1514,38 @@ async function loadList() {
 function renderList() {
   const q = $('search').value.toLowerCase().trim();
   const isNoLora = (w) => /无\s*lora/i.test(w.path || '');
+  const parseWorkflowName = (path) => {
+    const filename = String(path || '').split(/[\\/]/).pop().replace(/\.json$/i, '');
+    const idx = filename.indexOf(' - ');
+    const model = idx >= 0 ? filename.slice(0, idx) : filename;
+    const name = idx >= 0 ? filename.slice(idx + 3) : filename;
+    const outfitMatch = name.match(/\s*[\(（]([^()（）]+)[\)）]\s*$/);
+    const outfit = outfitMatch ? outfitMatch[1].trim() : '';
+    const roleRaw = outfit ? name.slice(0, outfitMatch.index).trim() : name.trim();
+    const roleKey = roleRaw.replace(/^新\s*/i, '').trim() || roleRaw || filename;
+    return {filename, model, roleRaw, roleKey, outfit};
+  };
+  const workflowCardHTML = (w) => {
+    const info = parseWorkflowName(w.path);
+    const thumb = w.thumbnail
+      ? `<img src="/api/thumbnail?path=${encodeURIComponent(w.path)}" class="w-12 h-12 object-cover rounded bg-gray-50" loading="lazy" />`
+      : `<div class="w-12 h-12 rounded bg-gray-100 flex items-center justify-center text-gray-300 text-[10px]">无图</div>`;
+    const noLora = isNoLora(w);
+    const cardCls = noLora
+      ? 'wf-item relative border-2 border-amber-400 ring-2 ring-amber-200 bg-amber-50 rounded p-1.5 cursor-pointer hover:bg-amber-100 flex flex-col items-center gap-0.5 w-16 overflow-hidden'
+      : 'wf-item border rounded p-1.5 cursor-pointer hover:bg-blue-50 hover:border-blue-300 flex flex-col items-center gap-0.5 w-16 overflow-hidden';
+    const badge = noLora
+      ? `<span class="absolute -top-1 -right-1 bg-amber-500 text-white text-[9px] leading-none px-1 py-0.5 rounded shadow">★</span>`
+      : '';
+    const mainLabel = info.outfit ? info.outfit : info.roleRaw;
+    const subLabel = info.outfit ? info.roleRaw : info.model;
+    return `<div class="${cardCls}" data-path="${escHtml(w.path)}" title="${escHtml(w.path)}">
+       ${badge}
+       ${thumb}
+       <span class="text-[11px] font-medium leading-tight break-all text-center w-full line-clamp-2">${escHtml(mainLabel)}</span>
+       <span class="text-[10px] text-gray-500 leading-tight break-all text-center w-full line-clamp-1">${escHtml(subLabel)}</span>
+     </div>`;
+  };
   let filtered = q
     ? allWorkflows.filter(w => (w.path || '').toLowerCase().includes(q))
     : allWorkflows.slice();
@@ -827,32 +1555,38 @@ function renderList() {
     $('wf-list').innerHTML = '<div class="p-2 text-gray-400">无</div>';
     return;
   }
-  // 横向卡片：[缩略图] 名字 ；每张卡片宽度自适应内容，行内尽量塞，溢出换行
-  $('wf-list').innerHTML =
-    `<div id="wf-grid" class="flex flex-wrap gap-2">` +
-    filtered.map(w => {
-      const stem = w.path.replace(/\.json$/i, '');
-      const idx = stem.indexOf(' - ');
-      const model = idx >= 0 ? stem.slice(0, idx) : stem;
-      const custom = idx >= 0 ? stem.slice(idx + 3) : '';
-      const thumb = w.thumbnail
-        ? `<img src="/api/thumbnail?path=${encodeURIComponent(w.path)}" class="w-12 h-12 object-cover rounded bg-gray-50" loading="lazy" />`
-        : `<div class="w-12 h-12 rounded bg-gray-100 flex items-center justify-center text-gray-300 text-[10px]">无图</div>`;
-      const noLora = isNoLora(w);
-      const cardCls = noLora
-        ? 'wf-item relative border-2 border-amber-400 ring-2 ring-amber-200 bg-amber-50 rounded p-1.5 cursor-pointer hover:bg-amber-100 flex flex-col items-center gap-0.5 w-16 overflow-hidden'
-        : 'wf-item border rounded p-1.5 cursor-pointer hover:bg-blue-50 hover:border-blue-300 flex flex-col items-center gap-0.5 w-16 overflow-hidden';
-      const badge = noLora
-        ? `<span class="absolute -top-1 -right-1 bg-amber-500 text-white text-[9px] leading-none px-1 py-0.5 rounded shadow">★</span>`
-        : '';
-      return `<div class="${cardCls}" data-path="${w.path}" title="${w.path}">
-         ${badge}
-         ${thumb}
-         <span class="text-[11px] font-medium leading-tight break-all text-center w-full line-clamp-2">${model}</span>
-         <span class="text-[10px] text-gray-500 leading-tight break-all text-center w-full line-clamp-1">${custom}</span>
-       </div>`;
-    }).join('') +
-    `</div>`;
+  const presetGroups = new Map();
+  const noPreset = [];
+  const presetRoleKeys = new Set(
+    filtered
+      .map(w => parseWorkflowName(w.path))
+      .filter(info => info.outfit)
+      .map(info => info.roleKey)
+  );
+  for (const w of filtered) {
+    const info = parseWorkflowName(w.path);
+    if (!info.outfit && !presetRoleKeys.has(info.roleKey)) {
+      noPreset.push(w);
+      continue;
+    }
+    if (!presetGroups.has(info.roleKey)) presetGroups.set(info.roleKey, []);
+    presetGroups.get(info.roleKey).push(w);
+  }
+  const sections = [];
+  if (noPreset.length) {
+    sections.push(`<section class="mb-3">
+      <div class="text-xs font-medium text-slate-600 mb-1">无预设服装 <span class="text-slate-400 font-normal">${noPreset.length} 个工作流</span></div>
+      <div class="flex flex-wrap gap-2">${noPreset.map(workflowCardHTML).join('')}</div>
+    </section>`);
+  }
+  for (const [role, items] of presetGroups.entries()) {
+    const presetCount = items.filter(w => parseWorkflowName(w.path).outfit).length;
+    sections.push(`<section class="mb-3">
+      <div class="text-xs font-medium text-slate-600 mb-1">${escHtml(role)} <span class="text-slate-400 font-normal">${presetCount} 个预设服装 · ${items.length} 个工作流</span></div>
+      <div class="flex flex-wrap gap-2">${items.map(workflowCardHTML).join('')}</div>
+    </section>`);
+  }
+  $('wf-list').innerHTML = sections.join('');
   document.querySelectorAll('.wf-item').forEach(el => {
     el.addEventListener('click', () => selectWorkflow(el.dataset.path));
   });
@@ -879,6 +1613,9 @@ async function selectWorkflow(path) {
 let activeWS = null;
 let currentPrompt = '';
 let activeHistoryTs = null;
+let activeRunPayload = null;
+let activeRoundHistoryTs = new Map();
+let historyDeleteImageChoice = null;
 
 function appendLog(line) {
   const el = $('log');
@@ -893,6 +1630,7 @@ function startRun() {
   const direct = $('direct').value.trim();
   const nl = $('nl').value.trim();
   const llmMode = $('llm-mode').value || 'translate';
+  const batch = Math.max(1, Math.min(50, parseInt($('batch').value) || 1));
   if (!direct && !nl) {
     if (!confirm('未输入任何 prompt，使用工作流内置 prompt？')) return;
   }
@@ -906,10 +1644,14 @@ function startRun() {
     override: $('override').checked,
     width: parseInt($('width').value) || null,
     height: parseInt($('height').value) || null,
-    batch: Math.max(1, Math.min(50, parseInt($('batch').value) || 1)),
+    steps: parseInt($('steps').value) || null,
+    batch,
+    rerun_llm_each_batch: batch > 1 && !!nl && $('rerun-llm-each-batch').checked,
   };
 
-  activeHistoryTs = pushPromptHistory(payload);
+  activeRunPayload = payload;
+  activeRoundHistoryTs = new Map();
+  activeHistoryTs = payload.rerun_llm_each_batch ? null : pushPromptHistory(payload);
 
   $('progress-box').classList.remove('hidden');
   $('result-box').classList.add('hidden');
@@ -943,6 +1685,10 @@ function handleMsg(m) {
     el.textContent += m.delta;
   } else if (m.type === 'llm_done') {
     appendLog('LLM 完成');
+    const ts = activeRunPayload?.rerun_llm_each_batch
+      ? ensureRoundPromptHistory(m.round || 1)
+      : activeHistoryTs;
+    updatePromptHistoryLlmOutput(ts, m.text || '');
   } else if (m.type === 'progress') {
     if (m.max && m.max > 1) {
       const pct = Math.floor((m.value || 0) * 100 / m.max);
@@ -956,20 +1702,41 @@ function handleMsg(m) {
     currentPrompt = m.final_prompt || '';
     $('final-prompt').textContent = m.final_prompt;
     $('result-box').classList.remove('hidden');
-    updatePromptHistoryFinalPrompt(activeHistoryTs, m.final_prompt);
+    const ts = activeRunPayload?.rerun_llm_each_batch
+      ? ensureRoundPromptHistory(m.round || 1, {final_prompt: m.final_prompt || ''})
+      : activeHistoryTs;
+    updatePromptHistoryFinalPrompt(ts, m.final_prompt);
   } else if (m.type === 'image') {
     const relPath = m.subfolder ? `${m.subfolder}/${m.filename}` : m.filename;
     const div = document.createElement('div');
-    div.innerHTML = `<a href="${m.url}" data-gallery="main" data-title="${m.filename}" class="glightbox block rounded border overflow-hidden">
-        <img src="${m.url}" class="w-full hover:ring-2 hover:ring-blue-400" loading="lazy" />
-      </a>
-      <div class="text-xs text-gray-500 break-all">${m.filename}</div>`;
+    div.dataset.outputPath = relPath;
+    div.className = 'relative';
+    const safeRel = escHtml(relPath);
+    const starred = featuredPaths.has(relPath);
+    div.innerHTML = `<div class="relative">
+        <a href="${m.url}" data-gallery="main" data-title="${escHtml(m.filename)}" data-rel-path="${safeRel}" class="glightbox block rounded border overflow-hidden">
+          <img src="${m.url}" class="w-full hover:ring-2 hover:ring-blue-400" loading="lazy" />
+        </a>
+        <button type="button" data-star-output="${safeRel}" data-starred="${starred ? '1' : '0'}"
+          class="absolute right-1 top-1 z-10 h-7 w-7 rounded-full border text-sm shadow bg-white/85 hover:bg-yellow-100 ${starred ? 'text-yellow-500 border-yellow-300' : 'text-gray-400 border-white/70'}"
+          title="${starred ? '取消精选' : '加入精选'}">★</button>
+        <button type="button" data-delete-output="${safeRel}"
+          class="absolute right-1 bottom-1 z-10 h-7 w-7 rounded-full border border-red-200 bg-red-50/90 text-xs font-bold text-red-700 shadow hover:bg-red-100"
+          title="删除图片">X</button>
+      </div>
+      <div class="mt-1 flex items-start gap-2">
+        <div class="text-xs text-gray-500 break-all min-w-0 flex-1">${escHtml(m.filename)}</div>
+      </div>`;
     $('images').appendChild(div);
     refreshLightbox();
-    updatePromptHistoryImage(activeHistoryTs, relPath);
+    const ts = activeRunPayload?.rerun_llm_each_batch
+      ? ensureRoundPromptHistory(m.round || 1)
+      : activeHistoryTs;
+    updatePromptHistoryImage(ts, relPath);
     pushHistory({
       url: m.url,
       filename: m.filename,
+      path: relPath,
       prompt: currentPrompt,
       time: Date.now(),
     });
@@ -978,7 +1745,9 @@ function handleMsg(m) {
     $('progress-text').textContent = '完成';
     if (m.final_prompt) {
       $('final-prompt').textContent = m.final_prompt;
-      updatePromptHistoryFinalPrompt(activeHistoryTs, m.final_prompt);
+      if (!activeRunPayload?.rerun_llm_each_batch) {
+        updatePromptHistoryFinalPrompt(activeHistoryTs, m.final_prompt);
+      }
     }
     finishRun();
   } else if (m.type === 'error') {
@@ -993,6 +1762,8 @@ function finishRun() {
   $('btn-cancel').classList.add('hidden');
   activeWS = null;
   activeHistoryTs = null;
+  activeRunPayload = null;
+  activeRoundHistoryTs = new Map();
   globalBusy = false;
   mirroring = false;
 }
@@ -1012,11 +1783,46 @@ function cancelRun() {
 
 $('btn-refresh').addEventListener('click', () => { loadCurrent(); loadList(); });
 $('search').addEventListener('input', renderList);
+$('btn-generate-thumbnails').addEventListener('click', startThumbnailQueue);
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-delete-output]');
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  deleteOutputImage(btn.dataset.deleteOutput);
+});
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest && e.target.closest('button[data-star-output]');
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  toggleFeatured(btn.dataset.starOutput);
+});
 $('btn-run').addEventListener('click', startRun);
 $('btn-cancel').addEventListener('click', cancelRun);
+$('btn-character-search').addEventListener('click', searchCharacterTags);
+$('character-search-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    searchCharacterTags();
+  }
+});
+$('character-search-results').addEventListener('click', (e) => {
+  const useBtn = e.target.closest('button[data-character-use]');
+  const appearanceBtn = e.target.closest('button[data-character-appearance]');
+  const copyBtn = e.target.closest('button[data-character-copy]');
+  if (!useBtn && !appearanceBtn && !copyBtn) return;
+  let items = [];
+  try { items = JSON.parse($('character-search-results').dataset.items || '[]'); } catch {}
+  const btn = useBtn || appearanceBtn || copyBtn;
+  const idx = Number(btn.dataset.characterUse ?? btn.dataset.characterAppearance ?? btn.dataset.characterCopy);
+  const prompt = items[idx]?.prompt || '';
+  if (useBtn) appendDirectTags(prompt);
+  else if (appearanceBtn) fillCharacterAppearanceTags(prompt, appearanceBtn);
+  else navigator.clipboard.writeText(prompt);
+});
 $('btn-reset-res').addEventListener('click', () => {
-  $('width').value = '';
-  $('height').value = '';
+  resetResolutionInputs();
 });
 $('res-presets').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-w]');
@@ -1025,6 +1831,7 @@ $('res-presets').addEventListener('click', (e) => {
   $('height').value = btn.dataset.h;
 });
 $('btn-reload-gallery').addEventListener('click', () => loadGallery(true));
+$('btn-reload-featured').addEventListener('click', loadFeatured);
 $('btn-load-more').addEventListener('click', () => loadGallery(false));
 $('btn-copy-builtin').addEventListener('click', () => {
   const text = $('builtin-text').textContent.trim();
@@ -1111,6 +1918,7 @@ function connectStatus() {
     if (m.type === 'status') {
       applyGlobalStatus(m);
     } else if (m.type === 'mirror') {
+      if (applyThumbnailEvent(m.event)) return;
       // 旁观者：用同一个 handler 渲染事件
       // 但发起者 (activeWS != null) 已经从自己的 ws 收到过同事件，跳过避免重复
       if (activeWS) return;
@@ -1269,8 +2077,10 @@ function refreshLightbox() { /* 兼容老调用：自建灯箱实时收集，无
 })();
 
 initPrivacyMask();
+initDarkMode();
 loadCurrent();
 loadList();
+loadFeatured();
 loadGallery(true);
 renderHist();
 migratePromptHistoryImagesOnce();
