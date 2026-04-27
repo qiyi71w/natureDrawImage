@@ -7,14 +7,22 @@ ComfyUI 网页版控制台
 # ========== IP / 端口配置 ==========
 COMFYUI_HOST = "127.0.0.1"
 COMFYUI_PORT = 8188
-LMS_HOST = "192.168.2.21"
+LMS_HOST = "127.0.0.1"
 LMS_PORT = 1234
 
 WEB_HOST = "127.0.0.1"
 WEB_PORT = 8080
 
 # ComfyUI 输出目录（只读浏览）
-OUTPUT_DIR_STR = r"D:\BaiduNetdiskDownload\ComfyUI-aki\ComfyUI-aki-v3\ComfyUI\output"
+OUTPUT_DIR_STR = "output"
+
+try:
+    from .local_config import *  # type: ignore  # 本机配置，不提交
+except ImportError:
+    try:
+        from local_config import *  # type: ignore  # python -m web.app 以外的直接运行场景
+    except ImportError:
+        pass
 # ===================================
 
 import asyncio

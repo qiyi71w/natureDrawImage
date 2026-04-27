@@ -1,2 +1,19 @@
 dev
 web/__pycache__
+web/tests/__pycache__/
+
+# Local runtime/generated state
+web/local_config.py
+web/featured_outputs.json
+web/character_search_cache.json
+
+# Generated prompt/LoRA audit reports
+lora_description_audit.json
+prompt_section_fix_report.json
+web/lora_presets.json
+
+# Local LoRA source links
+web/lora_links/*.txt
+
+# Generated image previews
+web/thumbnails/
